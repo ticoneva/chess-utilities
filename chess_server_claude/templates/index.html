@@ -20,14 +20,7 @@
             margin: 10px auto;
             width: 400px;
             border-radius: 3px;
-        }
-        .evaluation-marker {
-            width: 4px;
-            height: 24px;
-            background: #e74c3c;
-            position: absolute;
-            top: -2px;
-            transition: left 0.3s ease;
+            transition: background 0.3s ease;
         }
         .wdl-bar {
             height: 8px;
@@ -79,6 +72,24 @@
         }
         .move-item.current {
             background-color: #cce5ff;
+        }
+        .move-item.blunder {
+            background-color: #ffe5e5;
+            border: 1px solid #dc3545;
+        }
+        .move-item.mistake {
+            background-color: #fff3cd;
+            border: 1px solid #fd7e14;
+        }
+        .move-item.inaccuracy {
+            background-color: #fffbf0;
+            border: 1px solid #ffc107;
+        }
+        .move-item.current.blunder,
+        .move-item.current.mistake,
+        .move-item.current.inaccuracy {
+            background-color: #cce5ff;
+            border: 1px solid #cce5ff;
         }
         .sidebar {
             max-height: 90vh;
@@ -152,9 +163,14 @@
                         <div class="text-center" id="numBestMovesValue">3</div>
                     </div>
                     <div class="mb-2">
-                        <label class="form-label">Stockfish Time Limit (seconds)</label>
+                        <label class="form-label">Stockfish Time Limit (navigation, seconds)</label>
                         <input type="range" class="form-range" min="0.1" max="5.0" step="0.1" value="0.5" id="timeLimit">
                         <div class="text-center" id="timeLimitValue">0.5s</div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Stockfish Time Limit (puzzle prep, seconds)</label>
+                        <input type="range" class="form-range" min="0.01" max="5.0" step="0.01" value="0.1" id="puzzleTimeLimit">
+                        <div class="text-center" id="puzzleTimeLimitValue">0.1s</div>
                     </div>
                 </div>
             </div>
@@ -169,9 +185,7 @@
 
                 <!-- Evaluation Display -->
                 <div id="evaluationSection" class="mt-3" style="display: none;">
-                    <div class="evaluation-bar">
-                        <div class="evaluation-marker" id="evalMarker"></div>
-                    </div>
+                    <div class="evaluation-bar"></div>
                     <h5 id="evalScore">0.0</h5>
                     <div class="d-flex justify-content-center mt-2" id="wdlContainer">
                         <div class="text-center me-3">
@@ -194,11 +208,14 @@
 
                 <!-- Navigation -->
                 <div class="mt-3" id="navigationSection" style="display: none;">
-                    <div class="btn-group" role="group">
-                        <button class="btn btn-outline-secondary" id="firstBtn">⏮</button>
-                        <button class="btn btn-outline-secondary" id="prevBtn">◀</button>
-                        <button class="btn btn-outline-secondary" id="nextBtn">▶</button>
-                        <button class="btn btn-outline-secondary" id="lastBtn">⏭</button>
+                    <div class="d-flex justify-content-center align-items-center mb-2">
+                        <div class="btn-group" role="group">
+                            <button class="btn btn-outline-secondary" id="firstBtn">⏮</button>
+                            <button class="btn btn-outline-secondary" id="prevBtn">◀</button>
+                            <button class="btn btn-outline-secondary" id="nextBtn">▶</button>
+                            <button class="btn btn-outline-secondary" id="lastBtn">⏭</button>
+                        </div>
+                        <button class="btn btn-outline-secondary ms-2" id="flipBoardBtn">↔ Flip Board</button>
                     </div>
                     <div class="mt-2">
                         <span id="plyCounter">Move: 0 / 0</span>
@@ -362,6 +379,7 @@
         document.getElementById('prevBtn').addEventListener('click', goBack);
         document.getElementById('nextBtn').addEventListener('click', goForward);
         document.getElementById('lastBtn').addEventListener('click', goToLast);
+        document.getElementById('flipBoardBtn').addEventListener('click', flipBoard);
         document.getElementById('showEvaluation').addEventListener('change', updateSettings);
         document.getElementById('showBestMoves').addEventListener('change', updateSettings);
         document.getElementById('numBestMoves').addEventListener('input', function(e) {
@@ -370,6 +388,10 @@
         });
         document.getElementById('timeLimit').addEventListener('input', function(e) {
             document.getElementById('timeLimitValue').textContent = e.target.value + 's';
+            updateSettings();
+        });
+        document.getElementById('puzzleTimeLimit').addEventListener('input', function(e) {
+            document.getElementById('puzzleTimeLimitValue').textContent = e.target.value + 's';
             updateSettings();
         });
         document.getElementById('minClass').addEventListener('change', function(e) {
@@ -390,6 +412,12 @@
             else if (e.key === 'Home') goToFirst();
             else if (e.key === 'End') goToLast();
         });
+
+        // Global analysis state
+        var analysisCache = {};
+        var currentAnalysisAbortController = null;
+        var pendingAnalysisFen = null;
+        var currentMoveClassifications = {};
 
         // Functions
         async function uploadPGN() {
@@ -498,15 +526,14 @@
 
             // Reset to start of game
             currentPly = 0;
-            await goToPly(0);
-            await analyzePosition();
+            goToPly(0);
 
             // Show navigation and move list
             document.getElementById('navigationSection').style.display = 'block';
             document.getElementById('moveListSection').style.display = 'block';
             document.getElementById('evaluationSection').style.display = 'block';
 
-            // Load puzzles
+            // Load puzzles (async)
             loadPuzzles();
         }
 
@@ -518,42 +545,119 @@
                     totalPlies = data.total_plies;
                     currentPly = ply;
 
+                    // Store classifications for this game
+                    if (data.move_classifications) {
+                        currentMoveClassifications = data.move_classifications;
+                    }
+
+                    // Immediately display the board position
                     board.position(data.fen);
                     game.load(data.fen);
-                    updateMoveList(data.move_list, ply);
+                    updateMoveList(data.move_list, ply, currentMoveClassifications);
                     updatePlyCounter();
 
-                    // Get best moves
-                    await getBestMoves(data.fen);
+                    // Fire off two-stage analysis and best moves (don't await)
+                    getBestMoves(data.fen);
+                    analyzePositionTwoStage(data.fen);
                 }
             } catch (error) {
                 console.error('Error getting board:', error);
             }
         }
 
-        async function analyzePosition() {
-            if (!document.getElementById('showEvaluation').checked) return;
+        function flipBoard() {
+            board.flip();
+            // Preserve current position after flipping
+            board.position(board.position());
+        }
 
+        async function loadGameForPuzzle(gameIndex, ply) {
+            // Load game to get move list
             try {
-                const fen = board.fen();
-                const response = await fetch(`/analyze?fen=${encodeURIComponent(fen)}`);
+                const response = await fetch(`/game_info?game=${gameIndex}`);
                 const data = await response.json();
-                if (response.ok && !data.disabled) {
-                    updateEvaluation(data.evaluation, data.wdl);
+                if (response.ok) {
+                    // The game is now loaded on the server, fetch its move list
+                    const boardResponse = await fetch(`/board?ply=${ply}`);
+                    const boardData = await boardResponse.json();
+                    if (boardResponse.ok) {
+                        updateMoveList(boardData.move_list, boardData.ply);
+                    }
                 }
             } catch (error) {
-                console.error('Error analyzing position:', error);
+                console.error('Error loading game for puzzle:', error);
+            }
+        }
+
+        async function analyzePositionTwoStage(fen) {
+            if (!document.getElementById('showEvaluation').checked) return;
+
+            // Cancel any pending full analysis from previous position
+            if (currentAnalysisAbortController) {
+                currentAnalysisAbortController.abort();
+            }
+
+            // Create new AbortController for this analysis batch
+            const currentFen = fen;
+            currentAnalysisAbortController = new AbortController();
+
+            // Stage 1: Quick analysis (0.01s) - always show immediately and cache
+            try {
+                const quickResponse = await fetch(`/analyze_quick?fen=${encodeURIComponent(fen)}`, {
+                    signal: currentAnalysisAbortController.signal
+                });
+                const quickData = await quickResponse.json();
+                if (quickResponse.ok && !quickData.disabled) {
+                    // Store quick result in cache
+                    analysisCache[fen] = {
+                        quick: quickData,
+                        full: null
+                    };
+                    updateEvaluation(quickData.evaluation, quickData.wdl);
+                }
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    console.error('Error in quick analysis:', error);
+                }
+            }
+
+            // Stage 2: Full analysis - only display if we're still on the same position
+            try {
+                const fullResponse = await fetch(`/analyze?fen=${encodeURIComponent(fen)}`, {
+                    signal: currentAnalysisAbortController.signal
+                });
+
+                // Check if we're still on the same position
+                const isStillCurrent = board.fen() === fen;
+                if (!isStillCurrent || currentAnalysisAbortController.signal.aborted) {
+                    return; // User moved on, discard this result
+                }
+
+                const fullData = await fullResponse.json();
+                if (fullResponse.ok && !fullData.disabled) {
+                    // Update cache with full result
+                    analysisCache[fen] = {
+                        quick: analysisCache[fen]?.quick || fullData,
+                        full: fullData
+                    };
+                    updateEvaluation(fullData.evaluation, fullData.wdl);
+                    displayBestMoves(fullData.best_moves);
+                }
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    console.error('Error in full analysis:', error);
+                }
             }
         }
 
         function updateEvaluation(evalScore, wdl) {
             document.getElementById('evalScore').textContent = evalScore.toFixed(1);
 
-            // Update evaluation marker position
-            const marker = document.getElementById('evalMarker');
+            // Update evaluation bar gradient
+            const bar = document.querySelector('.evaluation-bar');
             // Center is 50%, range is about +/- 5 (500cp)
             const position = Math.min(95, Math.max(5, 50 + (evalScore * 10)));
-            marker.style.left = `calc(${position}% - 2px)`;
+            bar.style.background = `linear-gradient(to right, black ${position}%, white ${position}%)`;
 
             // Update WDL bars
             if (wdl) {
@@ -569,6 +673,18 @@
 
         async function getBestMoves(fen) {
             document.getElementById('bestMovesList').innerHTML = '<p class="text-muted">Loading...</p>';
+
+            // Check cache first
+            const cached = analysisCache[fen];
+            if (cached && cached.full) {
+                displayBestMoves(cached.full.best_moves);
+                return;
+            }
+            if (cached && cached.quick) {
+                displayBestMoves(cached.quick.best_moves);
+                // Return early - full analysis will update when ready via analyzePositionTwoStage
+                return;
+            }
 
             try {
                 const response = await fetch(`/analyze?fen=${encodeURIComponent(fen)}`);
@@ -622,7 +738,7 @@
             });
         }
 
-        function updateMoveList(moveList, currentPly) {
+        function updateMoveList(moveList, currentPly, moveClassifications) {
             const container = document.getElementById('moveList');
             let html = '';
 
@@ -632,14 +748,18 @@
 
                 const whiteMove = moveList[i];
                 if (whiteMove) {
-                    const isCurrent = whiteMove.ply === currentPly;
-                    html += `<span class="move-item ${isCurrent ? 'current' : ''}" data-ply="${whiteMove.ply}">${whiteMove.san}</span> `;
+                    const isCurrent = currentPly > 0 && whiteMove.ply === currentPly - 1;
+                    const classification = moveClassifications && moveClassifications[whiteMove.ply];
+                    const classStr = `move-item ${isCurrent ? 'current' : ''} ${classification || ''}`;
+                    html += `<span class="${classStr}" data-ply="${whiteMove.ply}">${whiteMove.san}</span> `;
                 }
 
                 const blackMove = moveList[i + 1];
                 if (blackMove) {
-                    const isCurrent = blackMove.ply === currentPly;
-                    html += `<span class="move-item ${isCurrent ? 'current' : ''}" data-ply="${blackMove.ply}">${blackMove.san}</span> `;
+                    const isCurrent = blackMove.ply === currentPly - 1;
+                    const classification = moveClassifications && moveClassifications[blackMove.ply];
+                    const classStr = `move-item ${isCurrent ? 'current' : ''} ${classification || ''}`;
+                    html += `<span class="${classStr}" data-ply="${blackMove.ply}">${blackMove.san}</span> `;
                 }
 
                 // Add space after each pair
@@ -663,25 +783,21 @@
         async function goForward() {
             if (currentPly < totalPlies) {
                 await goToPly(currentPly + 1);
-                await analyzePosition();
             }
         }
 
         async function goBack() {
             if (currentPly > 0) {
                 await goToPly(currentPly - 1);
-                await analyzePosition();
             }
         }
 
         async function goToFirst() {
             await goToPly(0);
-            await analyzePosition();
         }
 
         async function goToLast() {
             await goToPly(totalPlies);
-            await analyzePosition();
         }
 
         async function updateSettings() {
@@ -689,7 +805,8 @@
                 show_evaluation: document.getElementById('showEvaluation').checked,
                 show_best_moves: document.getElementById('showBestMoves').checked,
                 num_best_moves: parseInt(document.getElementById('numBestMoves').value),
-                time_limit: parseFloat(document.getElementById('timeLimit').value)
+                time_limit: parseFloat(document.getElementById('timeLimit').value),
+                puzzle_time_limit: parseFloat(document.getElementById('puzzleTimeLimit').value)
             };
 
             try {
@@ -705,9 +822,12 @@
 
                 // Refresh current analysis
                 if (currentGameIndex >= 0) {
-                    await getBestMoves(board.fen());
+                    const fen = board.fen();
+                    // Clear cache so we get new analysis with updated settings
+                    delete analysisCache[fen];
+                    await getBestMoves(fen);
                     if (settings.show_evaluation) {
-                        await analyzePosition();
+                        await analyzePositionTwoStage(fen);
                     }
                 }
             } catch (error) {
@@ -740,18 +860,215 @@
 
             document.getElementById('puzzleSettings').style.display = 'block';
 
-            // Show loading status
+            // Show initial loading status
             container.innerHTML = `
-                <div class="text-center py-3">
+                <div id="puzzleStatus" class="text-center py-3">
                     <div class="spinner-border text-primary" role="status">
                         <span class="visually-hidden">Loading...</span>
                     </div>
                     <p class="text-muted mt-2">
-                        <strong>Analyzing games for puzzles...</strong><br>
-                        <small>This uses Stockfish and may take 30-60 seconds for the first analysis.</small>
+                        <strong id="analysisStatus">Initializing analysis...</strong><br>
+                        <small id="gameName">Connecting to server...</small>
                     </p>
                 </div>
+                <div id="puzzleResults"></div>
             `;
+
+            // Store parsed puzzles globally for rendering
+            window.allPuzzles = [];
+            window.gamesWithPuzzles = {};
+
+            try {
+                const eventSource = new EventSource(`/puzzles_stream?min_class=${minClass}`);
+
+                eventSource.onmessage = function(e) {
+                    console.log('SSE message:', e.data);
+                };
+
+                eventSource.addEventListener('analysis_start', function(e) {
+                    const data = JSON.parse(e.data);
+                    document.getElementById('analysisStatus').textContent = `Analyzing ${data.total_games} games...`;
+                });
+
+                eventSource.addEventListener('game_start', function(e) {
+                    const data = JSON.parse(e.data);
+                    document.getElementById('gameName').textContent = `Game ${data.game_index + 1}: ${data.game_name}`;
+                });                eventSource.addEventListener('move_progress', function(e) {
+                    const data = JSON.parse(e.data);
+                    document.getElementById('gameName').textContent = `Game ${data.game_index + 1}: Move ${data.move_number + 1}/${data.total_moves} - ${data.move_san}`;
+                });
+
+
+                eventSource.addEventListener('game_complete', function(e) {
+                    const data = JSON.parse(e.data);
+                    updatePuzzleList(data);
+                });
+
+                eventSource.addEventListener('complete', function(e) {
+                    const data = JSON.parse(e.data);
+                    eventSource.close();
+                    finalizePuzzleList(data.total_games);
+                });
+
+                eventSource.onerror = function(e) {
+                    console.error('SSE error:', e);
+                    eventSource.close();
+                    // Fallback to regular fetch
+                    fallbackLoadPuzzles(minClass);
+                };
+
+            } catch (error) {
+                console.error('Error starting SSE:', error);
+                fallbackLoadPuzzles(minClass);
+            }
+        }
+
+        function updatePuzzleList(data) {
+            const resultsDiv = document.getElementById('puzzleResults');
+
+            // Store games with puzzles
+            if (data.puzzles && data.puzzles.length > 0) {
+                window.gamesWithPuzzles[data.game_index] = {
+                    puzzles: data.puzzles,
+                    game_name: data.game_name
+                };
+
+                // Update move classifications for this game
+                data.puzzles.forEach(function(puzzle) {
+                    currentMoveClassifications[puzzle.ply] = puzzle.classification;
+                });
+
+                // Refresh move list if viewing this game
+                if (currentGameIndex === data.game_index) {
+                    const moveListContainer = document.getElementById('moveList');
+                    // Refresh by calling board endpoint to get updated move list
+                    fetch(`/board?ply=${currentPly}`)
+                        .then(response => response.json())
+                        .then(boardData => {
+                            if (boardData.move_list) {
+                                const updatedClassifications = boardData.move_classifications || {};
+                                Object.assign(currentMoveClassifications, updatedClassifications);
+                                updateMoveList(boardData.move_list, currentPly, currentMoveClassifications);
+                            }
+                        });
+                }
+
+                // Rebuild results
+                rebuildPuzzleResults();
+            }
+        }
+
+        function rebuildPuzzleResults() {
+            const resultsDiv = document.getElementById('puzzleResults');
+            if (!resultsDiv) return;
+
+            let totalPuzzles = 0;
+            let html = '<div class="list-group">';
+
+            const sortedGames = Object.keys(window.gamesWithPuzzles).sort((a, b) => parseInt(a) - parseInt(b));
+
+            sortedGames.forEach(function(gameIdx) {
+                const gameData = window.gamesWithPuzzles[gameIdx];
+                const puzzles = gameData.puzzles;
+                totalPuzzles += puzzles.length;
+
+                // Game header
+                html += `<div class="list-group-item bg-dark text-white small">
+                    ${gameData.game_name} (Game ${parseInt(gameIdx) + 1})
+                </div>`;
+
+                // Puzzles for this game
+                puzzles.forEach(function(p) {
+                    var classLabel = p.classification.charAt(0).toUpperCase() + p.classification.slice(1);
+                    var puzzleIndex = window.allPuzzles.length;
+                    window.allPuzzles.push(p);
+
+                    html += `
+                        <div class="list-group-item puzzle-item ${p.classification}" data-puzzle="${puzzleIndex}">
+                            <div class="d-flex justify-content-between">
+                                <span>${classLabel}: ${p.san}</span>
+                                <small class="${p.eval_change > 0 ? 'text-danger' : ''}">${p.eval_change.toFixed(1)}</small>
+                            </div>
+                            <small class="text-muted">Move ${Math.floor(p.ply / 2) + 1} (${p.san}) • ${gameData.game_name.split(' vs ')[0]}</small>
+                        </div>
+                    `;
+                });
+            });
+
+            html += '</div>';
+
+            if (totalPuzzles > 0) {
+                const minClass = document.getElementById('minClass').value;
+                let classLabel = minClass === 'blunder' ? 'Blunders Only' :
+                               minClass === 'mistake' ? 'Mistakes+' : 'Inaccuracies+';
+
+                resultsDiv.innerHTML = `<div class="alert alert-info py-1 small mb-2">
+                    Found ${totalPuzzles} ${classLabel} so far...
+                </div>` + html;
+
+                // Add click handlers to new elements
+                addPuzzleClickHandlers();
+            }
+        }
+
+        function addPuzzleClickHandlers() {
+            const container = document.getElementById('puzzleResults');
+            if (!container) return;
+
+            container.querySelectorAll('.puzzle-item').forEach(function(el) {
+                // Only add handler if not already added
+                if (!el.hasAttribute('data-handler-added')) {
+                    el.setAttribute('data-handler-added', 'true');
+                    el.addEventListener('click', function() {
+                        const puzzleIndex = parseInt(this.dataset.puzzle);
+                        goToPuzzle(puzzleIndex);
+                    });
+                }
+            });
+        }
+
+        function finalizePuzzleList(totalGames) {
+            const statusDiv = document.getElementById('puzzleStatus');
+            const resultsDiv = document.getElementById('puzzleResults');
+
+            if (statusDiv) {
+                statusDiv.style.display = 'none';
+            }
+
+            if (resultsDiv) {
+                const totalPuzzles = window.allPuzzles.length;
+
+                if (totalPuzzles === 0) {
+                    const minClass = document.getElementById('minClass').value;
+                    let message = '<p class="text-muted">No puzzles found at this classification level.</p>';
+                    if (minClass === 'blunder') {
+                        message += '<p class="text-info small">Try selecting "Mistakes+" to include both blunders and mistakes.</p>';
+                    } else if (minClass === 'mistake') {
+                        message += '<p class="text-info small">Try selecting "Inaccuracies+" to include all puzzle types.</p>';
+                    }
+                    resultsDiv.innerHTML = message;
+                } else {
+                    const minClass = document.getElementById('minClass').value;
+                    let classLabel = minClass === 'blunder' ? 'Blunders Only' :
+                                   minClass === 'mistake' ? 'Mistakes+' : 'Inaccuracies+';
+
+                    const header = `<div class="alert alert-success py-1 small mb-2">
+                        ✓ Analysis complete! Found ${totalPuzzles} ${classLabel}
+                    </div>`;
+
+                    // Remove the "so far..." alert if it exists
+                    const infoAlert = resultsDiv.querySelector('.alert-info');
+                    if (infoAlert) {
+                        infoAlert.remove();
+                    }
+
+                    resultsDiv.innerHTML = header + resultsDiv.innerHTML;
+                }
+            }
+        }
+
+        async function fallbackLoadPuzzles(minClass) {
+            const container = document.getElementById('puzzlesList');
 
             try {
                 const response = await fetch(`/puzzles?min_class=${minClass}`);
@@ -763,7 +1080,7 @@
                 }
             } catch (error) {
                 console.error('Error loading puzzles:', error);
-                container.innerHTML = `<p class="text-danger">Failed to load puzzles. Please try again.</p>`;
+                container.innerHTML = `<p class="text-danger">Failed to load puzzles. SSE not supported.</p>`;
             }
         }
 
@@ -806,7 +1123,7 @@
                                 <span>${classLabel}: ${p.san}</span>
                                 <small class="${p.eval_change > 0 ? 'text-danger' : ''}">${p.eval_change.toFixed(1)}</small>
                             </div>
-                            <small class="text-muted">Move ${p.ply + 1}</small>
+                            <small class="text-muted">Move ${Math.floor(p.ply / 2) + 1} (${p.san})</small>
                         </div>
                     `;
                 });
@@ -838,6 +1155,10 @@
                 const response = await fetch(`/goto_puzzle?puzzle=${puzzleIndex}`);
                 const data = await response.json();
                 if (response.ok) {
+                    const puzzle = data.puzzle;
+                    const gameIndex = puzzle.game_index || 0;
+                    const ply = puzzle.ply || 0;
+
                     document.getElementById('gameTitle').textContent =
                         `Puzzle ${puzzleIndex + 1}: Find the best move!`;
                     document.getElementById('puzzleMessage').style.display = 'block';
@@ -845,8 +1166,11 @@
 
                     board.position(data.fen);
                     game.load(data.fen);
-                    currentPly = data.ply;
+                    currentPly = ply;
                     updatePlyCounter();
+
+                    // Load game moves for the move list
+                    loadGameForPuzzle(gameIndex, ply);
 
                     // Highlight puzzle in list
                     document.querySelectorAll('.puzzle-item').forEach(function(el) {
@@ -855,8 +1179,8 @@
                     const current = document.querySelector(`.puzzle-item[data-puzzle="${puzzleIndex}"]`);
                     if (current) current.classList.add('current-puzzle');
 
-                    // Get best moves
-                    await getBestMoves(data.fen);
+                    // Get best moves for this position
+                    getBestMoves(data.fen);
                 }
             } catch (error) {
                 console.error('Error going to puzzle:', error);

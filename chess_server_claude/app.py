@@ -8,9 +8,11 @@ import json
 import os
 from datetime import datetime
 from io import StringIO
+from queue import Queue
+from threading import Thread
 from typing import Dict, List, Optional, Any
 
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, render_template, request, jsonify, session, Response, stream_with_context
 
 import chess
 import chess.pgn
@@ -48,12 +50,17 @@ class GameState:
         self._game_puzzles: Dict[int, List[Dict[str, Any]]] = {}
         self._game_analyzed: Dict[int, bool] = {}
 
+        # Queue for streaming puzzle analysis results
+        self._analysis_queue: Optional[Queue] = None
+        self._analyzing: bool = False
+
         # Default settings
         self.settings = {
             "show_evaluation": True,
             "show_best_moves": True,
             "num_best_moves": 3,
-            "time_limit": 0.5,
+            "time_limit": 0.5,  # For real-time analysis during navigation
+            "puzzle_time_limit": 0.1,  # For puzzle preparation/analysis
             "threads": 4,
         }
 
@@ -128,19 +135,41 @@ class GameState:
         self.current_ply = 0
         self.current_node = board
 
-    def _analyze_game_moves(self, game_index: int) -> None:
+    def _analyze_game_moves(self, game_index: int, send_progress: bool = False) -> None:
         """Find blunders/mistakes/inaccuracies for a specific game using Stockfish."""
         if game_index in self._game_analyzed and self._game_analyzed[game_index]:
             # Already analyzed
+            if send_progress and self._analysis_queue:
+                self._analysis_queue.put({
+                    "type": "game_complete",
+                    "game_index": game_index,
+                    "puzzles": self._game_puzzles.get(game_index, []),
+                })
             return
 
         if game_index >= len(self.games):
             return
 
+        if send_progress and self._analysis_queue:
+            self._analysis_queue.put({
+                "type": "game_start",
+                "game_index": game_index,
+                "game_name": self.games[game_index]["headers"]["white"] + " vs " + self.games[game_index]["headers"]["black"],
+            })
+
         game_data = self.games[game_index]
         moves: List[Dict[str, Any]] = game_data["moves"]
 
         if not moves:
+            self._game_puzzles[game_index] = []
+            self._game_analyzed[game_index] = True
+            if send_progress and self._analysis_queue:
+                self._analysis_queue.put({
+                    "type": "game_complete",
+                    "game_index": game_index,
+                    "puzzles": [],
+                })
+            return
             self._game_puzzles[game_index] = []
             self._game_analyzed[game_index] = True
             return
@@ -150,15 +179,25 @@ class GameState:
 
         with chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH) as engine:
             engine.configure({"Skill Level": 20, "Threads": self.settings["threads"]})
-            time_limit = chess.engine.Limit(time=self.settings["time_limit"])
+            time_limit = chess.engine.Limit(time=self.settings["puzzle_time_limit"])
 
             for i, move_info in enumerate(moves):
                 move = chess.Move.from_uci(move_info["uci"])
 
+                # Send progress update for current move
+                if send_progress and self._analysis_queue:
+                    self._analysis_queue.put({
+                        "type": "move_progress",
+                        "game_index": game_index,
+                        "move_number": i,
+                        "move_san": move_info["san"],
+                        "total_moves": len(moves),
+                    })
+
                 # Analyze before the move
                 info = engine.analyse(board, time_limit)
                 score = info.get("score")
-                before_cp = score.relative.score(mate_score=10000) if score else 0
+                before_cp = score.white().score(mate_score=10000) if score else 0
                 before_eval = before_cp / 100.0
 
                 # Get WDL if available
@@ -177,7 +216,7 @@ class GameState:
                 # Analyze after the move
                 info = engine.analyse(board, time_limit)
                 score = info.get("score")
-                after_cp = score.relative.score(mate_score=10000) if score else 0
+                after_cp = score.white().score(mate_score=10000) if score else 0
                 after_eval = after_cp / 100.0
 
                 # Get WDL after move
@@ -230,6 +269,53 @@ class GameState:
         self._game_puzzles[game_index] = puzzles
         self._game_analyzed[game_index] = True
 
+        # Send progress update if streaming
+        if send_progress and self._analysis_queue:
+            self._analysis_queue.put({
+                "type": "game_complete",
+                "game_index": game_index,
+                "puzzles": puzzles,
+            })
+
+    def analyze_games_async(self, min_class: str) -> Queue:
+        """Analyze all games asynchronously and return a queue for progress updates."""
+        class_priority = {"blunder": 3, "mistake": 2, "inaccuracy": 1}
+        min_priority = class_priority.get(min_class, 1)
+
+        # Start analysis in background thread
+        self._analysis_queue = Queue()
+        self._analyzing = True
+
+        def analyze_thread():
+            for game_idx in range(len(self.games)):
+                if not self._analyzing:
+                    break
+                if game_idx not in self._game_analyzed or not self._game_analyzed[game_idx]:
+                    self._analyze_game_moves(game_idx, send_progress=True)
+
+            # Send complete signal
+            self._analysis_queue.put({
+                "type": "complete",
+                "total_games": len(self.games),
+            })
+            self._analyzing = False
+
+        Thread(target=analyze_thread, daemon=True).start()
+        return self._analysis_queue
+
+    def get_puzzles_for_game(
+        self, game_index: int, min_class: str
+    ) -> List[Dict[str, Any]]:
+        """Get filtered puzzles for a specific game."""
+        class_priority = {"blunder": 3, "mistake": 2, "inaccuracy": 1}
+        min_priority = class_priority.get(min_class, 1)
+
+        puzzles = self._game_puzzles.get(game_index, [])
+        return [
+            p for p in puzzles
+            if class_priority.get(p["classification"], 0) >= min_priority
+        ]
+
     def _get_best_moves(
         self, board: chess.Board, engine: Any, time_limit
     ) -> List[Dict[str, Any]]:
@@ -273,20 +359,15 @@ class GameState:
         return best_moves
 
     def get_filtered_puzzles(self, min_class: str) -> List[Dict[str, Any]]:
-        """Filter puzzles by minimum classification (with lazy analysis)."""
+        """Filter puzzles by minimum classification (existing analyzed games only)."""
         class_priority = {"blunder": 3, "mistake": 2, "inaccuracy": 1}
         min_priority = class_priority.get(min_class, 1)
 
-        # Analyze all games that haven't been analyzed yet (lazy loading)
-        for game_idx in range(len(self.games)):
-            if game_idx not in self._game_analyzed or not self._game_analyzed[game_idx]:
-                self._analyze_game_moves(game_idx)
-
-        # Collect all puzzles from all games
+        # Only return puzzles from games that have been analyzed
         all_puzzles = []
         for game_idx in range(len(self.games)):
-            if game_idx in self._game_puzzles:
-                all_puzzles.extend(self._game_puzzles[game_idx])
+            if game_idx in self._game_analyzed and self._game_analyzed[game_idx]:
+                all_puzzles.extend(self._game_puzzles.get(game_idx, []))
 
         return [
             p for p in all_puzzles
@@ -398,7 +479,7 @@ class GameState:
             if score and score.relative.mate():
                 after_cp = score.relative.mate() * 100
             else:
-                after_cp = score.relative.score(mate_score=10000) if score else 0
+                after_cp = score.white().score(mate_score=10000) if score else 0
 
             after_eval = after_cp / 100.0
 
@@ -572,13 +653,24 @@ def board():
     game_state.current_ply = ply
     fen = game_state.get_fen_at_ply(ply)
 
+    # Get puzzles for current game for move classification
+    game_index = game_state.current_game_index
+    puzzles = game_state._game_puzzles.get(game_index, [])
+    # Create a map from ply to classification
+    ply_classifications = {}
+    for p in puzzles:
+        ply_classifications[p["ply"]] = p["classification"]
+
     # Get current move info
     move_info = None
     move_list = []
     for i, mv in enumerate(game_state.moves):
         if i == ply:
             move_info = mv
-        move_list.append(mv)
+        # Add classification to move data
+        move_data = mv.copy()
+        move_data["classification"] = ply_classifications.get(i)
+        move_list.append(move_data)
 
     return jsonify({
         "fen": fen,
@@ -586,12 +678,100 @@ def board():
         "total_plies": game_state.total_plies,
         "current_move": move_info,
         "move_list": move_list,
+        "move_classifications": ply_classifications,  # Also send full map for updating
     })
 
 
-@app.route("/analyze")
-def analyze():
-    """Analyze position with Stockfish."""
+def analyze_position_with_time_limit(game_state: GameState, fen: str, time_limit: float) -> Dict[str, Any]:
+    """Analyze a position with a specific time limit."""
+    board = chess.Board(fen)
+
+    with chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH) as engine:
+        engine.configure({"Skill Level": 20, "Threads": game_state.settings["threads"]})
+        limit = chess.engine.Limit(time=time_limit)
+
+        info = engine.analyse(board, limit)
+        score = info.get("score")
+
+        if score:
+            if score.relative.mate():
+                eval_score = score.relative.mate() * 100
+            else:
+                eval_score = score.relative.score(mate_score=10000)
+        else:
+            eval_score = 0
+
+        # Get WDL
+        if score and hasattr(score, "wdl"):
+            wdl = score.wdl()
+            try:
+                win_chance = wdl.win_chance()
+                draw_chance = wdl.draw_chance()
+                loss_chance = wdl.loss_chance()
+                wdl_pcts = (win_chance, draw_chance, loss_chance)
+            except:
+                wdl_pcts = None
+        else:
+            wdl_pcts = None
+
+        # Get best moves
+        best_moves = game_state._get_best_moves_for_limit(board, engine, limit)
+
+        return {
+            "evaluation": eval_score / 100.0,
+            "wdl": wdl_pcts,
+            "best_moves": best_moves,
+        }
+
+
+def _get_best_moves_for_limit(self, board: chess.Board, engine: Any, time_limit) -> List[Dict[str, Any]]:
+    """Get top moves with scores for a position using a specific time limit."""
+    num_moves = self.settings["num_best_moves"]
+    if num_moves == 0:
+        return []
+
+    best_moves = []
+    seen_moves = set()
+
+    # Get principal variation (PV) info
+    info = engine.analyse(board, time_limit, multipv=num_moves)
+
+    for pv_info in info:
+        if "pv" not in pv_info:
+            continue
+
+        score = pv_info.get("score")
+        if not score:
+            continue
+
+        if score.relative.mate():
+            cp = score.relative.mate() * 100
+        else:
+            cp = score.relative.score(mate_score=10000)
+
+        move_san = board.san(pv_info["pv"][0])
+        move_uci = pv_info["pv"][0].uci()
+
+        if move_uci in seen_moves:
+            continue
+        seen_moves.add(move_uci)
+
+        best_moves.append({
+            "san": move_san,
+            "uci": move_uci,
+            "score": cp / 100.0,
+        })
+
+    return best_moves
+
+
+# Monkey patch the method into GameState
+GameState._get_best_moves_for_limit = _get_best_moves_for_limit
+
+
+@app.route("/analyze_quick")
+def analyze_quick():
+    """Quick analysis with 0.01s time limit for fast navigation."""
     session_id = session.get("session_id")
     if session_id not in games_db:
         return jsonify({"error": "No active session"}), 404
@@ -604,22 +784,52 @@ def analyze():
     fen = request.args.get("fen")
 
     if fen:
-        result = game_state.analyze_position(fen)
+        result = analyze_position_with_time_limit(game_state, fen, 0.01)
     else:
         # Use current position
         fen = game_state.get_fen_at_ply(game_state.current_ply)
-        result = game_state.analyze_position(fen)
+        result = analyze_position_with_time_limit(game_state, fen, 0.01)
 
     # Only include best moves if enabled
     if not game_state.settings["show_best_moves"]:
         result["best_moves"] = []
 
+    result["quick"] = True  # Mark as quick analysis
+    return jsonify(result)
+
+
+@app.route("/analyze")
+def analyze():
+    """Analyze position with Stockfish (full time limit)."""
+    session_id = session.get("session_id")
+    if session_id not in games_db:
+        return jsonify({"error": "No active session"}), 404
+
+    game_state = games_db[session_id]
+
+    if not game_state.settings["show_evaluation"]:
+        return jsonify({"disabled": True})
+
+    fen = request.args.get("fen")
+
+    if fen:
+        result = analyze_position_with_time_limit(game_state, fen, game_state.settings["time_limit"])
+    else:
+        # Use current position
+        fen = game_state.get_fen_at_ply(game_state.current_ply)
+        result = analyze_position_with_time_limit(game_state, fen, game_state.settings["time_limit"])
+
+    # Only include best moves if enabled
+    if not game_state.settings["show_best_moves"]:
+        result["best_moves"] = []
+
+    result["quick"] = False  # Mark as full analysis
     return jsonify(result)
 
 
 @app.route("/puzzles")
 def puzzles():
-    """Get filtered blunders/mistakes/inaccuracies."""
+    """Get filtered blunders/mistakes/inaccuracies (existing analysis only)."""
     session_id = session.get("session_id")
     if session_id not in games_db:
         return jsonify({"error": "No active session"}), 404
@@ -633,7 +843,93 @@ def puzzles():
         "puzzles": puzzles,
         "total": len(puzzles),
         "current_puzzle_index": game_state.puzzle_settings["current_puzzle_index"],
+        "total_games": len(game_state.games),
     })
+
+
+@app.route("/puzzles_stream")
+def puzzles_stream():
+    """Stream puzzle analysis progress via SSE."""
+    session_id = session.get("session_id")
+    if session_id not in games_db:
+        return jsonify({"error": "No active session"}), 404
+
+    game_state = games_db[session_id]
+    min_class = request.args.get("min_class", "inaccuracy")
+
+    class_priority = {"blunder": 3, "mistake": 2, "inaccuracy": 1}
+    min_priority = class_priority.get(min_class, 1)
+
+    def generate():
+        # Start async analysis
+        queue = game_state.analyze_games_async(min_class)
+
+        # Send initial state (already analyzed games)
+        for game_idx in range(len(game_state.games)):
+            if game_idx in game_state._game_analyzed and game_state._game_analyzed[game_idx]:
+                puzzles = [
+                    p for p in game_state._game_puzzles.get(game_idx, [])
+                    if class_priority.get(p["classification"], 0) >= min_priority
+                ]
+                if puzzles:
+                    game_name = game_state.games[game_idx]["headers"]["white"] + " vs " + game_state.games[game_idx]["headers"]["black"]
+                    payload = {"game_index": game_idx, "puzzles": puzzles, "game_name": game_name}
+                    yield "event: game_complete\n"
+                    yield "data: " + json.dumps(payload) + "\n"
+                    yield "\n"
+
+        # Send start signal for new analysis
+        payload = {"total_games": len(game_state.games)}
+        yield "event: analysis_start\n"
+        yield "data: " + json.dumps(payload) + "\n"
+        yield "\n"
+
+        # Stream analysis progress
+        while True:
+            try:
+                message = queue.get(timeout=1)
+                if message["type"] == "complete":
+                    yield "event: complete\n"
+                    yield "data: " + json.dumps(message) + "\n"
+                    yield "\n"
+                    send_complete = True
+                    break
+
+                elif message["type"] == "game_complete":
+                    puzzles = [
+                        p for p in message["puzzles"]
+                        if class_priority.get(p["classification"], 0) >= min_priority
+                    ]
+                    game_name = game_state.games[message["game_index"]]["headers"]["white"] + " vs " + game_state.games[message["game_index"]]["headers"]["black"]
+                    payload = {"game_index": message["game_index"], "puzzles": puzzles, "game_name": game_name}
+                    yield "event: game_complete\n"
+                    yield "data: " + json.dumps(payload) + "\n"
+                    yield "\n"
+
+                elif message["type"] == "game_start":
+                    payload = {"game_index": message["game_index"], "game_name": message["game_name"]}
+                    yield "event: game_start\n"
+                    yield "data: " + json.dumps(payload) + "\n"
+                    yield "\n"
+
+
+                elif message["type"] == "move_progress":
+                    yield "event: move_progress\n"
+                    yield "data: " + json.dumps(message) + "\n"
+                    yield "\n"
+            except:
+                if not game_state._analyzing:
+                    break
+                continue
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
 
 @app.route("/goto_puzzle")
@@ -727,6 +1023,8 @@ def settings():
         game_state.settings["num_best_moves"] = data["num_best_moves"]
     if "time_limit" in data:
         game_state.settings["time_limit"] = float(data["time_limit"])
+    if "puzzle_time_limit" in data:
+        game_state.settings["puzzle_time_limit"] = float(data["puzzle_time_limit"])
 
     return jsonify({"success": True})
 

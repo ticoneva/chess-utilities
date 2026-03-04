@@ -1,5 +1,0 @@
-Download the PGN of all games from
-https://www.chess.com/member/joj0108goat/games
-and save them to a 'PGN' folder, and combine all into a joj0108gota.pgn file in the root folder.
-
-Note that there are multiple pages, and page change does not change the URL.

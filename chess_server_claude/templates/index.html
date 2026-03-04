@@ -1034,6 +1034,20 @@
                 puzzle_time_limit: parseFloat(document.getElementById('puzzleTimeLimit').value)
             };
 
+            // Update puzzle classification mode
+            try {
+                const puzzleSettings = {
+                    classification_mode: document.getElementById('classificationMode').value
+                };
+                await fetch('/puzzle_settings', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(puzzleSettings)
+                });
+            } catch (error) {
+                console.error('Error updating puzzle classification mode:', error);
+            }
+
             try {
                 const response = await fetch('/settings', {
                     method: 'POST',
@@ -1187,6 +1201,9 @@
             const resultsDiv = document.getElementById('puzzleResults');
             if (!resultsDiv) return;
 
+            // Reset puzzle array when rebuilding - this ensures correct indices
+            window.allPuzzles = [];
+
             let totalPuzzles = 0;
             let html = '<div class="list-group">';
 
@@ -1241,12 +1258,16 @@
             if (!container) return;
 
             container.querySelectorAll('.puzzle-item').forEach(function(el) {
-                // Only add handler if not already added
-                if (!el.hasAttribute('data-handler-added')) {
-                    el.setAttribute('data-handler-added', 'true');
-                    el.addEventListener('click', function() {
-                        const puzzleIndex = parseInt(this.dataset.puzzle);
-                        goToPuzzle(puzzleIndex);
+                // Store current handler to avoid duplicates
+                if (!el.hasAttribute('data-handler-puzzle')) {
+                    el.setAttribute('data-handler-puzzle', el.dataset.puzzle || '');
+                    el.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const puzzleIndex = parseInt(el.dataset.puzzle);
+                        if (!isNaN(puzzleIndex)) {
+                            goToPuzzle(puzzleIndex);
+                        }
                     });
                 }
             });
@@ -1277,17 +1298,17 @@
                     let classLabel = minClass === 'blunder' ? 'Blunders Only' :
                                    minClass === 'mistake' ? 'Mistakes+' : 'Inaccuracies+';
 
-                    const header = `<div class="alert alert-success py-1 small mb-2">
-                        ✓ Analysis complete! Found ${totalPuzzles} ${classLabel}
-                    </div>`;
-
                     // Remove the "so far..." alert if it exists
                     const infoAlert = resultsDiv.querySelector('.alert-info');
                     if (infoAlert) {
                         infoAlert.remove();
                     }
 
-                    resultsDiv.innerHTML = header + resultsDiv.innerHTML;
+                    // Use insertAdjacentHTML to add header without destroying existing event handlers
+                    const header = `<div class="alert alert-success py-1 small mb-2">
+                        ✓ Analysis complete! Found ${totalPuzzles} ${classLabel}
+                    </div>`;
+                    resultsDiv.insertAdjacentHTML('afterbegin', header);
                 }
             }
         }
@@ -1366,13 +1387,8 @@
 
             container.innerHTML = successMsg + html;
 
-            // Add click handlers
-            container.querySelectorAll('.puzzle-item').forEach(function(el) {
-                el.addEventListener('click', function() {
-                    const puzzleIndex = parseInt(this.dataset.puzzle);
-                    goToPuzzle(puzzleIndex);
-                });
-            });
+            // Add click handlers using shared function
+            addPuzzleClickHandlers();
         }
 
         async function goToPuzzle(puzzleIndex) {

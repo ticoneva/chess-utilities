@@ -70,6 +70,7 @@ class GameState:
             "success_criterion": "top3",  # top3, best, any
             "current_puzzle_index": -1,
             "min_class": "blunder",  # inaccuracy, mistake, blunder
+            "classification_mode": "wdl",  # eval or wdl
         }
 
         # Parse games
@@ -206,12 +207,8 @@ class GameState:
                     try:
                         if hasattr(wdl, 'white') and callable(wdl.white):
                             white_wdl = wdl.white()
-                            total = white_wdl.wins + white_wdl.draws + white_wdl.losses
-                            before_wdl = (
-                                (white_wdl.wins * 1000) / total if total > 0 else 0,
-                                (white_wdl.draws * 1000) / total if total > 0 else 0,
-                                (white_wdl.losses * 1000) / total if total > 0 else 0,
-                            )
+                            # Stockfish WDL sums to 1000, so raw counts are already in thousandths (‰)
+                            before_wdl = (white_wdl.wins, white_wdl.draws, white_wdl.losses)
                         else:
                             before_wdl = None
                     except:
@@ -234,12 +231,7 @@ class GameState:
                     try:
                         if hasattr(wdl, 'white') and callable(wdl.white):
                             white_wdl = wdl.white()
-                            total = white_wdl.wins + white_wdl.draws + white_wdl.losses
-                            after_wdl = (
-                                (white_wdl.wins * 1000) / total if total > 0 else 0,
-                                (white_wdl.draws * 1000) / total if total > 0 else 0,
-                                (white_wdl.losses * 1000) / total if total > 0 else 0,
-                            )
+                            after_wdl = (white_wdl.wins, white_wdl.draws, white_wdl.losses)
                         else:
                             after_wdl = None
                     except:
@@ -247,17 +239,22 @@ class GameState:
                 else:
                     after_wdl = None
 
-                # Calculate evaluation change
-                # For white moves: white made the move, so positive change = bad for white
-                # For black moves: black made the move, so positive change = bad for black
-                # We want the change in the perspective of the player who made the move
+                # Classify move based on classification mode
+                classification = None
+                classification_mode = self.puzzle_settings.get("classification_mode", "wdl")
+
+                # Calculate evaluation change (always compute for storage)
                 if i % 2 == 0:  # White's move
                     eval_change = before_eval - after_eval
                 else:  # Black's move
                     eval_change = after_eval - before_eval
 
-                # Classify move
-                classification = None
+                # For puzzle analysis, always use eval-based (more consistent)
+                # WDL mode is only for navigation highlighting
+                BLUNDER_THRESHOLD = 300  # cp
+                MISTAKE_THRESHOLD = 100  # cp
+                INACCURACY_THRESHOLD = 50  # cp
+
                 if eval_change >= BLUNDER_THRESHOLD / 100.0:
                     classification = "blunder"
                 elif eval_change >= MISTAKE_THRESHOLD / 100.0:
@@ -454,6 +451,16 @@ class GameState:
 
         puzzle = filtered[puzzle_index]
         ply = puzzle["ply"]
+
+        # Load the game containing this puzzle
+        game_index = puzzle["game_index"]
+        if game_index >= len(self.games):
+            return None
+
+        self.current_game_index = game_index
+        self._load_current_game()
+
+        # Now get the FEN at the puzzle's ply
         fen = self.get_fen_at_ply(ply)
         return {
             "fen": fen,
@@ -731,22 +738,20 @@ def analyze_position_with_time_limit(game_state: GameState, fen: str, time_limit
                 # chess 1.11.2+: PovWdl object - call white() to get WDL from white's perspective
                 if hasattr(wdl, 'white') and callable(wdl.white):
                     white_wdl = wdl.white()
-                    total = white_wdl.wins + white_wdl.draws + white_wdl.losses
-                    # Convert to thousandths (‰) for more precision
-                    win_chance = (white_wdl.wins * 1000) / total if total > 0 else 0
-                    draw_chance = (white_wdl.draws * 1000) / total if total > 0 else 0
-                    loss_chance = (white_wdl.losses * 1000) / total if total > 0 else 0
-                # chess < 1.11.2: direct attributes
+                    # Stockfish WDL sums to 1000, so raw counts are already in thousandths (‰)
+                    win_chance = white_wdl.wins
+                    draw_chance = white_wdl.draws
+                    loss_chance = white_wdl.losses
+                # chess < 1.11.2: direct attributes (unlikely with SF18)
                 elif hasattr(wdl, 'wins') and hasattr(wdl, 'draws') and hasattr(wdl, 'losses'):
-                    total = wdl.wins + wdl.draws + wdl.losses
-                    win_chance = (wdl.wins * 1000) / total if total > 0 else 0
-                    draw_chance = (wdl.draws * 1000) / total if total > 0 else 0
-                    loss_chance = (wdl.losses * 1000) / total if total > 0 else 0
+                    win_chance = wdl.wins
+                    draw_chance = wdl.draws
+                    loss_chance = wdl.losses
                 else:
                     raise AttributeError("No WDL access method found")
 
                 wdl_pcts = (win_chance, draw_chance, loss_chance)
-                print(f"WDL (white perspective): win={win_chance:.4f}, draw={draw_chance:.4f}, loss={loss_chance:.4f}")
+                print(f"WDL (white perspective, ‰): win={win_chance:.0f}, draw={draw_chance:.0f}, loss={loss_chance:.0f}")
             except Exception as e:
                 import traceback
                 print(f"WDL error: {e}")
@@ -1044,6 +1049,8 @@ def puzzle_settings():
         game_state.puzzle_settings["success_criterion"] = data["success_criterion"]
     if "min_class" in data:
         game_state.puzzle_settings["min_class"] = data["min_class"]
+    if "classification_mode" in data:
+        game_state.puzzle_settings["classification_mode"] = data["classification_mode"]
 
     return jsonify({"success": True})
 

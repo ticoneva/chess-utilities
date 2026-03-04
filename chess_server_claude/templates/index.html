@@ -201,6 +201,13 @@
                         <input type="range" class="form-range" min="0.01" max="5.0" step="0.01" value="0.1" id="puzzleTimeLimit">
                         <div class="text-center" id="puzzleTimeLimitValue">0.1s</div>
                     </div>
+                    <div class="mb-2">
+                        <label class="form-label">Classification Mode</label>
+                        <select class="form-select" id="classificationMode">
+                            <option value="eval">Based on Evaluation (CP)</option>
+                            <option value="wdl">Based on WDL Decrease</option>
+                        </select>
+                    </div>
                 </div>
             </div>
 
@@ -216,23 +223,6 @@
                 <div id="evaluationSection" class="mt-3" style="display: none;">
                     <div class="evaluation-bar"></div>
                     <h5 id="evalScore">0.0</h5>
-                    <div class="d-flex justify-content-center mt-2" id="wdlContainer">
-                        <div class="text-center me-3">
-                            <div class="wdl-bar bg-dark" id="winBar" style="width: 50%"></div>
-                            <small>Win</small>
-                            <span id="winPct">50%</span>
-                        </div>
-                        <div class="text-center me-3">
-                            <div class="wdl-bar bg-secondary" id="drawBar" style="width: 50%"></div>
-                            <small>Draw</small>
-                            <span id="drawPct">0%</span>
-                        </div>
-                        <div class="text-center">
-                            <div class="wdl-bar bg-white border" id="lossBar" style="width: 50%"></div>
-                            <small>Loss</small>
-                            <span id="lossPct">50%</span>
-                        </div>
-                    </div>
                 </div>
 
                 <!-- Navigation -->
@@ -440,6 +430,30 @@
             document.getElementById('puzzleTimeLimitValue').textContent = e.target.value + 's';
             updateSettings();
         });
+        document.getElementById('classificationMode').addEventListener('change', function(e) {
+            // Clear and re-classify all moves when mode changes
+            currentMoveClassifications = {};
+            plyEvaluations = {};
+            plyWDL = {};
+
+            // Clear analysis cache to force re-analysis
+            Object.keys(analysisCache).forEach(key => {
+                delete analysisCache[key];
+            });
+
+            // Reload current position to re-trigger full analysis
+            if (currentPly >= 0) {
+                fetch(`/board?ply=${currentPly}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.move_list) {
+                            updateMoveList(data.move_list, currentPly, currentMoveClassifications);
+                            // Trigger analysis manually since we want fresh data
+                            analyzePositionTwoStage(data.fen);
+                        }
+                    });
+            }
+        });
         document.getElementById('minClass').addEventListener('change', function(e) {
             updatePuzzleSettings();
             loadPuzzles();
@@ -469,6 +483,7 @@
         var pendingAnalysisFen = null;
         var currentMoveClassifications = {};
         var plyEvaluations = {};  // Store evaluation at each ply from navigation
+        var plyWDL = {};  // Store WDL at each ply from navigation
 
         // Functions
         async function uploadPGN() {
@@ -588,6 +603,7 @@
             currentPly = 0;
             // Reset navigation analysis state for new game
             plyEvaluations = {};
+            plyWDL = {};
             currentMoveClassifications = {};
             goToPly(0);
 
@@ -677,23 +693,33 @@
                     signal: currentAnalysisAbortController.signal
                 });
                 const quickData = await quickResponse.json();
+                console.log(`Quick analysis for ply ${positionPly}:`, quickData);
+                if (quickData.wdl) {
+                    console.log(`  WDL data: [${quickData.wdl.map(x => x.toFixed(0)).join(', ')}]‰`);
+                } else {
+                    console.log(`  No WDL data received`);
+                }
                 if (quickResponse.ok && !quickData.disabled) {
                     // Store quick result in cache
                     analysisCache[fen] = {
                         quick: quickData,
                         full: null
                     };
-                    updateEvaluation(quickData.evaluation, quickData.wdl);
+                    updateEvaluation(quickData.evaluation);
 
-                    // Store this evaluation for the position
+                    // Store this evaluation and WDL for the position
                     plyEvaluations[positionPly] = quickData.evaluation;
+                    if (quickData.wdl) {
+                        plyWDL[positionPly] = quickData.wdl;
+                    }
 
                     // Classify the move that led to this position
-                    // We need the evaluation from the previous position (positionPly - 1)
+                    // We need the evaluation/WDL from the previous position (positionPly - 1)
                     const previousPositionEval = plyEvaluations[positionPly - 1];
+                    const previousPositionWDL = plyWDL[positionPly - 1];
                     if (previousPositionEval !== undefined && movePly >= 0) {
                         console.log(`Classifying move ${movePly}: before=${previousPositionEval.toFixed(2)}, after=${quickData.evaluation.toFixed(2)}`);
-                        classifyMove(movePly, previousPositionEval, quickData.evaluation, positionPly);
+                        classifyMove(movePly, previousPositionEval, quickData.evaluation, positionPly, previousPositionWDL, quickData.wdl);
                     } else {
                         console.log(`Skipping classification: previousPositionEval=${previousPositionEval}, movePly=${movePly}`);
                     }
@@ -723,17 +749,21 @@
                         quick: analysisCache[fen]?.quick || fullData,
                         full: fullData
                     };
-                    updateEvaluation(fullData.evaluation, fullData.wdl);
+                    updateEvaluation(fullData.evaluation);
                     displayBestMoves(fullData.best_moves);
 
-                    // Update evaluation for this position
+                    // Update evaluation and WDL for this position
                     plyEvaluations[positionPly] = fullData.evaluation;
+                    if (fullData.wdl) {
+                        plyWDL[positionPly] = fullData.wdl;
+                    }
 
                     // Re-classify with full analysis
                     const previousPositionEval = plyEvaluations[positionPly - 1];
+                    const previousPositionWDL = plyWDL[positionPly - 1];
                     if (previousPositionEval !== undefined && movePly >= 0) {
                         console.log(`Re-classifying move ${movePly}: before=${previousPositionEval.toFixed(2)}, after=${fullData.evaluation.toFixed(2)}`);
-                        classifyMove(movePly, previousPositionEval, fullData.evaluation, positionPly);
+                        classifyMove(movePly, previousPositionEval, fullData.evaluation, positionPly, previousPositionWDL, fullData.wdl);
                     }
                 }
             } catch (error) {
@@ -743,7 +773,7 @@
             }
         }
 
-        function classifyMove(ply, beforeEval, afterEval, currentPly) {
+        function classifyMove(ply, beforeEval, afterEval, currentPly, beforeWDL, afterWDL) {
             // Exclude white's first move (ply 0) from blunder analysis
             // Non-standard openings can look like mistakes from Stockfish's perspective
             if (ply === 0) {
@@ -751,34 +781,75 @@
                 return null;
             }
 
-            // Classification thresholds (centipawns in pawn units)
-            const BLUNDER_THRESHOLD = 3.0;
-            const MISTAKE_THRESHOLD = 1.0;
-            const INACCURACY_THRESHOLD = 0.5;
+            const classificationMode = document.getElementById('classificationMode').value;
 
             // Determine who made the move at this ply
             // ply 0 = white's first move, ply 1 = black's first move, etc.
             const isWhiteMove = (ply % 2 === 0);
 
-            let evalChange;
-            if (isWhiteMove) {
-                // White made the move: positive change = bad for white
-                evalChange = beforeEval - afterEval;
-            } else {
-                // Black made the move: positive change = bad for black
-                evalChange = afterEval - beforeEval;
-            }
-
             let classification = null;
-            if (evalChange >= BLUNDER_THRESHOLD) {
-                classification = 'blunder';
-                console.log(`Ply ${ply} classified as blunder: eval change = ${evalChange.toFixed(2)} (isWhiteMove=${isWhiteMove})`);
-            } else if (evalChange >= MISTAKE_THRESHOLD) {
-                classification = 'mistake';
-                console.log(`Ply ${ply} classified as mistake: eval change = ${evalChange.toFixed(2)} (isWhiteMove=${isWhiteMove})`);
-            } else if (evalChange >= INACCURACY_THRESHOLD) {
-                classification = 'inaccuracy';
-                console.log(`Ply ${ply} classified as inaccuracy: eval change = ${evalChange.toFixed(2)} (isWhiteMove=${isWhiteMove})`);
+
+            if (classificationMode === 'eval') {
+                // Classification thresholds (centipawns in pawn units)
+                const BLUNDER_THRESHOLD = 3.0;
+                const MISTAKE_THRESHOLD = 1.0;
+                const INACCURACY_THRESHOLD = 0.5;
+
+                let evalChange;
+                if (isWhiteMove) {
+                    // White made the move: positive change = bad for white
+                    evalChange = beforeEval - afterEval;
+                } else {
+                    // Black made the move: positive change = bad for black
+                    evalChange = afterEval - beforeEval;
+                }
+
+                if (evalChange >= BLUNDER_THRESHOLD) {
+                    classification = 'blunder';
+                } else if (evalChange >= MISTAKE_THRESHOLD) {
+                    classification = 'mistake';
+                } else if (evalChange >= INACCURACY_THRESHOLD) {
+                    classification = 'inaccuracy';
+                }
+                console.log(`Ply ${ply} (eval mode): evalChange=${evalChange.toFixed(2)}, classification=${classification}`);
+            } else if (classificationMode === 'wdl') {
+                // WDL thresholds based on win chance decrease (‰)
+                // - Blunder: decrease ≥ 200‰ (20%)
+                // - Mistake: decrease ≥ 100‰ (10%)
+                // - Inaccuracy: decrease ≥ 50‰ (5%)
+                const BLUNDER_WDL_DECREASE = 200;
+                const MISTAKE_WDL_DECREASE = 100;
+                const INACCURACY_WDL_DECREASE = 50;
+
+                if (beforeWDL && afterWDL) {
+                    console.log(`Ply ${ply} WDL (‰) - before: [${beforeWDL.map(x => x.toFixed(0)).join(',')}], after: [${afterWDL.map(x => x.toFixed(0)).join(',')}]`);
+
+                    // WDL is always from white's perspective: (white_win, draw, white_loss/black_win)
+                    const beforeWhiteWin = beforeWDL[0];
+                    const afterWhiteWin = afterWDL[0];
+
+                    let wdlChange;
+                    if (isWhiteMove) {
+                        // White moved: decrease in white's win chance is bad
+                        wdlChange = beforeWhiteWin - afterWhiteWin;
+                    } else {
+                        // Black moved: increase in white's win chance = decrease in black's win chance = blunder
+                        wdlChange = afterWhiteWin - beforeWhiteWin;
+                    }
+
+                    console.log(`Ply ${ply} (wdl mode): isWhiteMove=${isWhiteMove}, wdlChange=${wdlChange.toFixed(0)}‰, beforeWhiteWin=${beforeWhiteWin.toFixed(0)}‰, afterWhiteWin=${afterWhiteWin.toFixed(0)}‰`);
+
+                    if (wdlChange >= BLUNDER_WDL_DECREASE) {
+                        classification = 'blunder';
+                    } else if (wdlChange >= MISTAKE_WDL_DECREASE) {
+                        classification = 'mistake';
+                    } else if (wdlChange >= INACCURACY_WDL_DECREASE) {
+                        classification = 'inaccuracy';
+                    }
+                    console.log(`Ply ${ply} (wdl mode): classification=${classification}`);
+                } else {
+                    console.log(`Ply ${ply}: missing WDL data (beforeWDL=${beforeWDL}, afterWDL=${afterWDL})`);
+                }
             }
 
             // Store classification
@@ -807,7 +878,7 @@
             }
         }
 
-        function updateEvaluation(evalScore, wdl) {
+        function updateEvaluation(evalScore) {
             document.getElementById('evalScore').textContent = evalScore.toFixed(1);
 
             // Update evaluation bar gradient
@@ -815,17 +886,6 @@
             // Center is 50%, range is about +/- 5 (500cp)
             const position = Math.min(95, Math.max(5, 50 + (evalScore * 10)));
             bar.style.background = `linear-gradient(to right, black ${position}%, white ${position}%)`;
-
-            // Update WDL bars
-            if (wdl) {
-                const [win, draw, loss] = wdl;
-                document.getElementById('winBar').style.width = (win * 100) + '%';
-                document.getElementById('drawBar').style.width = (draw * 100) + '%';
-                document.getElementById('lossBar').style.width = (loss * 100) + '%';
-                document.getElementById('winPct').textContent = (win * 100).toFixed(0) + '%';
-                document.getElementById('drawPct').textContent = (draw * 100).toFixed(0) + '%';
-                document.getElementById('lossPct').textContent = (loss * 100).toFixed(0) + '%';
-            }
         }
 
         async function getBestMoves(fen) {

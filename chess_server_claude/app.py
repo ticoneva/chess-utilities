@@ -200,11 +200,20 @@ class GameState:
                 before_cp = score.white().score(mate_score=10000) if score else 0
                 before_eval = before_cp / 100.0
 
-                # Get WDL if available
+                # Get WDL if available (from white's perspective, in thousandths)
                 if score and hasattr(score, "wdl"):
                     wdl = score.wdl()
                     try:
-                        before_wdl = (wdl.win_chance(), wdl.draw_chance(), wdl.loss_chance())
+                        if hasattr(wdl, 'white') and callable(wdl.white):
+                            white_wdl = wdl.white()
+                            total = white_wdl.wins + white_wdl.draws + white_wdl.losses
+                            before_wdl = (
+                                (white_wdl.wins * 1000) / total if total > 0 else 0,
+                                (white_wdl.draws * 1000) / total if total > 0 else 0,
+                                (white_wdl.losses * 1000) / total if total > 0 else 0,
+                            )
+                        else:
+                            before_wdl = None
                     except:
                         before_wdl = None
                 else:
@@ -219,11 +228,20 @@ class GameState:
                 after_cp = score.white().score(mate_score=10000) if score else 0
                 after_eval = after_cp / 100.0
 
-                # Get WDL after move
+                # Get WDL after move (from white's perspective, in thousandths)
                 if score and hasattr(score, "wdl"):
                     wdl = score.wdl()
                     try:
-                        after_wdl = (wdl.win_chance(), wdl.draw_chance(), wdl.loss_chance())
+                        if hasattr(wdl, 'white') and callable(wdl.white):
+                            white_wdl = wdl.white()
+                            total = white_wdl.wins + white_wdl.draws + white_wdl.losses
+                            after_wdl = (
+                                (white_wdl.wins * 1000) / total if total > 0 else 0,
+                                (white_wdl.draws * 1000) / total if total > 0 else 0,
+                                (white_wdl.losses * 1000) / total if total > 0 else 0,
+                            )
+                        else:
+                            after_wdl = None
                     except:
                         after_wdl = None
                 else:
@@ -705,18 +723,35 @@ def analyze_position_with_time_limit(game_state: GameState, fen: str, time_limit
         if score and board.turn == chess.BLACK:
             eval_score = -eval_score
 
-        # Get WDL
+        # Get WDL (always from white's perspective for consistency)
+        wdl_pcts = None
         if score and hasattr(score, "wdl"):
-            wdl = score.wdl()
             try:
-                win_chance = wdl.win_chance()
-                draw_chance = wdl.draw_chance()
-                loss_chance = wdl.loss_chance()
+                wdl = score.wdl()
+                # chess 1.11.2+: PovWdl object - call white() to get WDL from white's perspective
+                if hasattr(wdl, 'white') and callable(wdl.white):
+                    white_wdl = wdl.white()
+                    total = white_wdl.wins + white_wdl.draws + white_wdl.losses
+                    # Convert to thousandths (‰) for more precision
+                    win_chance = (white_wdl.wins * 1000) / total if total > 0 else 0
+                    draw_chance = (white_wdl.draws * 1000) / total if total > 0 else 0
+                    loss_chance = (white_wdl.losses * 1000) / total if total > 0 else 0
+                # chess < 1.11.2: direct attributes
+                elif hasattr(wdl, 'wins') and hasattr(wdl, 'draws') and hasattr(wdl, 'losses'):
+                    total = wdl.wins + wdl.draws + wdl.losses
+                    win_chance = (wdl.wins * 1000) / total if total > 0 else 0
+                    draw_chance = (wdl.draws * 1000) / total if total > 0 else 0
+                    loss_chance = (wdl.losses * 1000) / total if total > 0 else 0
+                else:
+                    raise AttributeError("No WDL access method found")
+
                 wdl_pcts = (win_chance, draw_chance, loss_chance)
-            except:
+                print(f"WDL (white perspective): win={win_chance:.4f}, draw={draw_chance:.4f}, loss={loss_chance:.4f}")
+            except Exception as e:
+                import traceback
+                print(f"WDL error: {e}")
+                traceback.print_exc()
                 wdl_pcts = None
-        else:
-            wdl_pcts = None
 
         # Get best moves
         best_moves = game_state._get_best_moves_for_limit(board, engine, limit)

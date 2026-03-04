@@ -73,21 +73,22 @@
         .move-item.current {
             background-color: #cce5ff;
         }
-        .move-item.blunder {
-            background-color: #ffe5e5;
-            border-left: 3px solid #dc3545;
-        }
-        .move-item.mistake {
-            background-color: #fff3cd;
-            border-left: 3px solid #fd7e14;
-        }
-        .move-item.inaccuracy {
-            background-color: #fffbf0;
-            border-left: 3px solid #ffc107;
-        }
         .move-item.current {
             background-color: #cce5ff;
             font-weight: bold;
+        }
+        /* Classification styles - higher specificity to persist when not current */
+        .move-item.blunder {
+            background-color: #ffe5e5 !important;
+            border-left: 3px solid #dc3545;
+        }
+        .move-item.mistake {
+            background-color: #fff3cd !important;
+            border-left: 3px solid #fd7e14;
+        }
+        .move-item.inaccuracy {
+            background-color: #fffbf0 !important;
+            border-left: 3px solid #ffc107;
         }
         /* Current move with classification: keep classification color, add blue border indicator */
         .move-item.current.blunder {
@@ -580,9 +581,9 @@
                     totalPlies = data.total_plies;
                     currentPly = ply;
 
-                    // Store classifications for this game
+                    // Merge classifications: keep local ones from navigation, add server ones from full analysis
                     if (data.move_classifications) {
-                        currentMoveClassifications = data.move_classifications;
+                        Object.assign(currentMoveClassifications, data.move_classifications);
                     }
 
                     // Immediately display the board position
@@ -616,6 +617,10 @@
                     const boardResponse = await fetch(`/board?ply=${ply}`);
                     const boardData = await boardResponse.json();
                     if (boardResponse.ok) {
+                        // Merge server classifications with local ones
+                        if (boardData.move_classifications) {
+                            Object.assign(currentMoveClassifications, boardData.move_classifications);
+                        }
                         updateMoveList(boardData.move_list, boardData.ply, currentMoveClassifications);
                     }
                 }

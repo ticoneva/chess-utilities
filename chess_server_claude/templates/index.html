@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess Puzzle Generator</title>
+    <!-- Bootstrap 5.3.0 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Chessboard.js CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css">
+    <style>
+        #board {
+            width: 400px;
+            margin: 0 auto;
+        }
+        .evaluation-bar {
+            height: 20px;
+            background: linear-gradient(to right, black 50%, white 50%);
+            position: relative;
+            margin: 10px auto;
+            width: 400px;
+            border-radius: 3px;
+        }
+        .evaluation-marker {
+            width: 4px;
+            height: 24px;
+            background: #e74c3c;
+            position: absolute;
+            top: -2px;
+            transition: left 0.3s ease;
+        }
+        .wdl-bar {
+            height: 8px;
+            margin-bottom: 2px;
+            border-radius: 2px;
+            transition: width 0.3s ease;
+        }
+        .best-move {
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+        }
+        .best-move:hover {
+            background-color: #e9ecef;
+        }
+        .puzzle-item {
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .puzzle-item:hover {
+            background-color: #e9ecef;
+        }
+        .blunder {
+            border-left: 3px solid #dc3545;
+        }
+        .mistake {
+            border-left: 3px solid #fd7e14;
+        }
+        .inaccuracy {
+            border-left: 3px solid #ffc107;
+        }
+        .current-puzzle {
+            background-color: #d4edda !important;
+        }
+        .move-list {
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+        }
+        .move-item {
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 3px;
+            display: inline-block;
+        }
+        .move-item:hover {
+            background-color: #e9ecef;
+        }
+        .move-item.current {
+            background-color: #cce5ff;
+        }
+        .sidebar {
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .right-sidebar {
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .tab-content {
+            flex: 1;
+            overflow-y: auto;
+        }
+        .result-message {
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .correct {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .incorrect {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Left Sidebar -->
+            <div class="col-md-3 p-3 border-end sidebar">
+                <h4 class="mb-3">Chess Puzzle Generator</h4>
+
+                <div class="mb-4">
+                    <label class="form-label">Load PGN File</label>
+                    <input type="file" class="form-control mb-2" id="pgnFile" accept=".pgn">
+                    <button class="btn btn-primary w-100 mb-2" id="uploadBtn">
+                        Upload File
+                    </button>
+                    <div class="text-center text-muted my-2">— or —</div>
+                    <button class="btn btn-outline-secondary w-100" id="loadSampleBtn">
+                        Load Sample PGN
+                    </button>
+                </div>
+
+                <div class="mb-4" id="gamesSection" style="display: none;">
+                    <label class="form-label">Games</label>
+                    <div class="list-group" id="gamesList"></div>
+                </div>
+
+                <div class="mb-4">
+                    <h5>Settings</h5>
+                    <div class="form-check mb-2">
+                        <input type="checkbox" class="form-check-input" id="showEvaluation" checked>
+                        <label class="form-check-label" for="showEvaluation">
+                            Show Evaluation
+                        </label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input type="checkbox" class="form-check-input" id="showBestMoves" checked>
+                        <label class="form-check-label" for="showBestMoves">
+                            Show Best Moves
+                        </label>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Number of Best Moves</label>
+                        <input type="range" class="form-range" min="0" max="5" value="3" id="numBestMoves">
+                        <div class="text-center" id="numBestMovesValue">3</div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Stockfish Time Limit (seconds)</label>
+                        <input type="range" class="form-range" min="0.1" max="5.0" step="0.1" value="0.5" id="timeLimit">
+                        <div class="text-center" id="timeLimitValue">0.5s</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Content -->
+            <div class="col-md-6 p-3 text-center">
+                <h4 id="gameTitle" class="mb-3">No Game Loaded</h4>
+
+                <div id="boardContainer">
+                    <div id="board"></div>
+                </div>
+
+                <!-- Evaluation Display -->
+                <div id="evaluationSection" class="mt-3" style="display: none;">
+                    <div class="evaluation-bar">
+                        <div class="evaluation-marker" id="evalMarker"></div>
+                    </div>
+                    <h5 id="evalScore">0.0</h5>
+                    <div class="d-flex justify-content-center mt-2" id="wdlContainer">
+                        <div class="text-center me-3">
+                            <div class="wdl-bar bg-dark" id="winBar" style="width: 50%"></div>
+                            <small>Win</small>
+                            <span id="winPct">50%</span>
+                        </div>
+                        <div class="text-center me-3">
+                            <div class="wdl-bar bg-secondary" id="drawBar" style="width: 50%"></div>
+                            <small>Draw</small>
+                            <span id="drawPct">0%</span>
+                        </div>
+                        <div class="text-center">
+                            <div class="wdl-bar bg-white border" id="lossBar" style="width: 50%"></div>
+                            <small>Loss</small>
+                            <span id="lossPct">50%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Navigation -->
+                <div class="mt-3" id="navigationSection" style="display: none;">
+                    <div class="btn-group" role="group">
+                        <button class="btn btn-outline-secondary" id="firstBtn">⏮</button>
+                        <button class="btn btn-outline-secondary" id="prevBtn">◀</button>
+                        <button class="btn btn-outline-secondary" id="nextBtn">▶</button>
+                        <button class="btn btn-outline-secondary" id="lastBtn">⏭</button>
+                    </div>
+                    <div class="mt-2">
+                        <span id="plyCounter">Move: 0 / 0</span>
+                    </div>
+                </div>
+
+                <!-- Puzzle Mode Message -->
+                <div id="puzzleMessage" class="mt-3" style="display: none;">
+                    <div class="alert alert-info">
+                        <strong>Puzzle Mode</strong> - Find the best move!
+                    </div>
+                    <div id="puzzleResult" class="result-message" style="display: none;"></div>
+                </div>
+
+                <!-- Move List -->
+                <div class="mt-3" id="moveListSection" style="display: none;">
+                    <h5>Move List</h5>
+                    <div class="move-list border p-2 text-start" id="moveList"></div>
+                </div>
+            </div>
+
+            <!-- Right Sidebar -->
+            <div class="col-md-3 p-3 border-start right-sidebar">
+                <ul class="nav nav-tabs mb-3" role="tablist">
+                    <li class="nav-item">
+                        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#bestMovesTab">
+                            Best Moves
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#puzzlesTab">
+                            Puzzles
+                        </button>
+                    </li>
+                </ul>
+
+                <div class="tab-content">
+                    <!-- Best Moves Tab -->
+                    <div class="tab-pane fade show active" id="bestMovesTab">
+                        <div id="bestMovesList">
+                            <p class="text-muted">Load a game to see best moves</p>
+                        </div>
+                    </div>
+
+                    <!-- Puzzles Tab -->
+                    <div class="tab-pane fade" id="puzzlesTab">
+                        <div id="puzzleSettings" class="mb-3" style="display: none;">
+                            <div class="mb-2">
+                                <label class="form-label">Minimum Classification</label>
+                                <select class="form-select" id="minClass">
+                                    <option value="inaccuracy">Inaccuracies+</option>
+                                    <option value="mistake">Mistakes+</option>
+                                    <option value="blunder" selected>Blunders Only</option>
+                                </select>
+                            </div>
+                            <div class="form-check mb-2">
+                                <input type="checkbox" class="form-check-input" id="puzzleModeToggle">
+                                <label class="form-check-label" for="puzzleModeToggle">
+                                    Puzzle Mode
+                                </label>
+                            </div>
+                            <div class="mb-2" id="successCriterionSection" style="display: none;">
+                                <label class="form-label">Success Criterion</label>
+                                <select class="form-select" id="successCriterion">
+                                    <option value="top3">Top 3</option>
+                                    <option value="best">Best move</option>
+                                    <option value="any">Any good move</option>
+                                </select>
+                            </div>
+                            <button class="btn btn-primary w-100" id="startPuzzle">
+                                Start Puzzles
+                            </button>
+                        </div>
+                        <div id="puzzlesList">
+                            <p class="text-muted">Load a game to see puzzles</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Chessboard.js JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.0/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
+    <!-- Chess.js for move validation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+
+    <script>
+        // Global state
+        var board = null;
+        var chessEngine = null;
+        var currentPly = 0;
+        var totalPlies = 0;
+        var currentGameIndex = -1;
+        var puzzleMode = false;
+
+        // Initialize chessboard
+        var config = {
+            draggable: true,
+            position: 'start',
+            pieceTheme: function(piece) {
+                // Use Lichess piece images (cburnett style)
+                // piece format: 'wP', 'bK', etc.
+                return 'https://lichess1.org/assets/piece/cburnett/' + piece + '.svg';
+            },
+            onDragStart: onDragStart,
+            onDrop: onDrop,
+            onSnapEnd: onSnapEnd
+        };
+        board = Chessboard('board', config);
+
+        // Chess.js instance for move validation
+        var game = new Chess();
+
+        // Board click handler for selecting puzzles' moves
+        function onDragStart(source, piece) {
+            // Do not pick up pieces if the game is over
+            if (game.game_over()) return false;
+
+            // Only pick up pieces for the side to move
+            if ((game.turn() === 'w' && piece.search(/^b/) !== -1) ||
+                (game.turn() === 'b' && piece.search(/^w/) !== -1)) {
+                return false;
+            }
+        }
+
+        function onDrop(source, target) {
+            var move = game.move({
+                from: source,
+                to: target,
+                promotion: 'q' // NOTE: always promote to a queen for simplicity
+            });
+
+            // Illegal move
+            if (move === null) return 'snapback';
+
+            var move_uci = source + target;
+
+            if (puzzleMode) {
+                // Check move in puzzle mode
+                checkPuzzleMove(move_uci);
+                return 'snapback'; // Don't make the move
+            } else {
+                // Normal navigation - create state at new position
+                gameState.position(game.fen());
+            }
+        }
+
+        function onSnapEnd() {
+            // Update the board position after the piece snap
+            // board.position(game.fen());
+        }
+
+        // Event Listeners
+        document.getElementById('uploadBtn').addEventListener('click', uploadPGN);
+        document.getElementById('loadSampleBtn').addEventListener('click', loadSample);
+        document.getElementById('firstBtn').addEventListener('click', goToFirst);
+        document.getElementById('prevBtn').addEventListener('click', goBack);
+        document.getElementById('nextBtn').addEventListener('click', goForward);
+        document.getElementById('lastBtn').addEventListener('click', goToLast);
+        document.getElementById('showEvaluation').addEventListener('change', updateSettings);
+        document.getElementById('showBestMoves').addEventListener('change', updateSettings);
+        document.getElementById('numBestMoves').addEventListener('input', function(e) {
+            document.getElementById('numBestMovesValue').textContent = e.target.value;
+            updateSettings();
+        });
+        document.getElementById('timeLimit').addEventListener('input', function(e) {
+            document.getElementById('timeLimitValue').textContent = e.target.value + 's';
+            updateSettings();
+        });
+        document.getElementById('minClass').addEventListener('change', function(e) {
+            updatePuzzleSettings();
+            loadPuzzles();
+        });
+        document.getElementById('puzzleModeToggle').addEventListener('change', function(e) {
+            document.getElementById('successCriterionSection').style.display = e.target.checked ? 'block' : 'none';
+            updatePuzzleSettings();
+        });
+        document.getElementById('successCriterion').addEventListener('change', updatePuzzleSettings);
+        document.getElementById('startPuzzle').addEventListener('click', startPuzzle);
+
+        // Keyboard navigation
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'ArrowLeft') goBack();
+            else if (e.key === 'ArrowRight') goForward();
+            else if (e.key === 'Home') goToFirst();
+            else if (e.key === 'End') goToLast();
+        });
+
+        // Functions
+        async function uploadPGN() {
+            const file = document.getElementById('pgnFile').files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/upload_pgn', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    loadGamesList(data.num_games);
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error uploading PGN: ' + error);
+            }
+        }
+
+        async function loadSample() {
+            try {
+                const response = await fetch('/load_sample');
+                const data = await response.json();
+                if (response.ok) {
+                    loadGamesList(data.num_games);
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error loading sample: ' + error);
+            }
+        }
+
+        function loadGamesList(numGames) {
+            document.getElementById('gamesSection').style.display = 'block';
+            const gamesList = document.getElementById('gamesList');
+            gamesList.innerHTML = '';
+
+            // Fetch game info for all games
+            for (let i = 0; i < numGames; i++) {
+                fetchGameInfo(i);
+            }
+        }
+
+        async function fetchGameInfo(gameIndex) {
+            try {
+                const response = await fetch(`/game_info?game=${gameIndex}`);
+                const data = await response.json();
+                if (response.ok) {
+                    addGameToList(gameIndex, data);
+                    if (currentGameIndex === -1) {
+                        selectGame(gameIndex);
+                    }
+                }
+            } catch (error) {
+                console.error('Error fetching game info:', error);
+            }
+        }
+
+        function addGameToList(gameIndex, data) {
+            const gamesList = document.getElementById('gamesList');
+            const button = document.createElement('button');
+            button.className = 'list-group-item list-group-item-action';
+            button.dataset.gameIndex = gameIndex;
+            button.id = `game-${gameIndex}`;
+            button.innerHTML = `
+                <div class="d-flex w-100 justify-content-between">
+                    <h6 class="mb-1">${data.headers.white} vs ${data.headers.black}</h6>
+                    <small>${data.headers.result}</small>
+                </div>
+                <small class="text-muted">${data.headers.date} • ${data.headers.event}</small>
+            `;
+            button.addEventListener('click', () => selectGame(gameIndex));
+            gamesList.appendChild(button);
+        }
+
+        async function selectGame(gameIndex) {
+            currentGameIndex = gameIndex;
+            puzzleMode = false;
+
+            // Highlight selected game
+            document.querySelectorAll('#gamesList .list-group-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            const selected = document.getElementById(`game-${gameIndex}`);
+            if (selected) selected.classList.add('active');
+
+            // Tell backend to switch to this game
+            try {
+                const response = await fetch(`/game_info?game=${gameIndex}`);
+                const data = await response.json();
+                if (response.ok) {
+                    // Update game title
+                    document.getElementById('gameTitle').textContent =
+                        `${data.headers.white} vs ${data.headers.black} - ${data.headers.event}`;
+                }
+            } catch (error) {
+                console.error('Error switching game:', error);
+            }
+
+            // Reset to start of game
+            currentPly = 0;
+            await goToPly(0);
+            await analyzePosition();
+
+            // Show navigation and move list
+            document.getElementById('navigationSection').style.display = 'block';
+            document.getElementById('moveListSection').style.display = 'block';
+            document.getElementById('evaluationSection').style.display = 'block';
+
+            // Load puzzles
+            loadPuzzles();
+        }
+
+        async function goToPly(ply) {
+            try {
+                const response = await fetch(`/board?ply=${ply}`);
+                const data = await response.json();
+                if (response.ok) {
+                    totalPlies = data.total_plies;
+                    currentPly = ply;
+
+                    board.position(data.fen);
+                    game.load(data.fen);
+                    updateMoveList(data.move_list, ply);
+                    updatePlyCounter();
+
+                    // Get best moves
+                    await getBestMoves(data.fen);
+                }
+            } catch (error) {
+                console.error('Error getting board:', error);
+            }
+        }
+
+        async function analyzePosition() {
+            if (!document.getElementById('showEvaluation').checked) return;
+
+            try {
+                const fen = board.fen();
+                const response = await fetch(`/analyze?fen=${encodeURIComponent(fen)}`);
+                const data = await response.json();
+                if (response.ok && !data.disabled) {
+                    updateEvaluation(data.evaluation, data.wdl);
+                }
+            } catch (error) {
+                console.error('Error analyzing position:', error);
+            }
+        }
+
+        function updateEvaluation(evalScore, wdl) {
+            document.getElementById('evalScore').textContent = evalScore.toFixed(1);
+
+            // Update evaluation marker position
+            const marker = document.getElementById('evalMarker');
+            // Center is 50%, range is about +/- 5 (500cp)
+            const position = Math.min(95, Math.max(5, 50 + (evalScore * 10)));
+            marker.style.left = `calc(${position}% - 2px)`;
+
+            // Update WDL bars
+            if (wdl) {
+                const [win, draw, loss] = wdl;
+                document.getElementById('winBar').style.width = (win * 100) + '%';
+                document.getElementById('drawBar').style.width = (draw * 100) + '%';
+                document.getElementById('lossBar').style.width = (loss * 100) + '%';
+                document.getElementById('winPct').textContent = (win * 100).toFixed(0) + '%';
+                document.getElementById('drawPct').textContent = (draw * 100).toFixed(0) + '%';
+                document.getElementById('lossPct').textContent = (loss * 100).toFixed(0) + '%';
+            }
+        }
+
+        async function getBestMoves(fen) {
+            document.getElementById('bestMovesList').innerHTML = '<p class="text-muted">Loading...</p>';
+
+            try {
+                const response = await fetch(`/analyze?fen=${encodeURIComponent(fen)}`);
+                const data = await response.json();
+                if (response.ok) {
+                    displayBestMoves(data.best_moves);
+                }
+            } catch (error) {
+                console.error('Error getting best moves:', error);
+            }
+        }
+
+        function displayBestMoves(bestMoves) {
+            const container = document.getElementById('bestMovesList');
+
+            if (!document.getElementById('showBestMoves').checked || !bestMoves || bestMoves.length === 0) {
+                container.innerHTML = '<p class="text-muted">Best moves disabled</p>';
+                return;
+            }
+
+            let html = '<h6 class="mt-2">Top Moves</h6>';
+            html += '<div class="list-group">';
+
+            bestMoves.forEach(function(move) {
+                const scoreClass = move.score > 0 ? 'text-dark' : 'text-muted';
+                html += `
+                    <div class="list-group-item best-move" data-uci="${move.uci}" data-san="${move.san}">
+                        <div class="d-flex justify-content-between">
+                            <span><strong>${move.san}</strong></span>
+                            <span class="${scoreClass}">${move.score > 0 ? '+' : ''}${move.score.toFixed(1)}</span>
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += '</div>';
+            container.innerHTML = html;
+
+            // Add click handlers to make moves
+            container.querySelectorAll('.best-move').forEach(function(el) {
+                el.addEventListener('click', function() {
+                    if (!puzzleMode) {
+                        const move = game.move({from: this.dataset.uci.substring(0,2), to: this.dataset.uci.substring(2)});
+                        if (move) {
+                            board.position(game.fen());
+                            goForward();
+                            game.undo(); // Undo the temporary move
+                        }
+                    }
+                });
+            });
+        }
+
+        function updateMoveList(moveList, currentPly) {
+            const container = document.getElementById('moveList');
+            let html = '';
+
+            for (let i = 0; i < moveList.length; i += 2) {
+                const moveNum = Math.floor(i / 2) + 1;
+                html += `<span class="move-number">${moveNum}.</span>`;
+
+                const whiteMove = moveList[i];
+                if (whiteMove) {
+                    const isCurrent = whiteMove.ply === currentPly;
+                    html += `<span class="move-item ${isCurrent ? 'current' : ''}" data-ply="${whiteMove.ply}">${whiteMove.san}</span> `;
+                }
+
+                const blackMove = moveList[i + 1];
+                if (blackMove) {
+                    const isCurrent = blackMove.ply === currentPly;
+                    html += `<span class="move-item ${isCurrent ? 'current' : ''}" data-ply="${blackMove.ply}">${blackMove.san}</span> `;
+                }
+
+                // Add space after each pair
+                html += ' ';
+            }
+
+            container.innerHTML = html;
+
+            // Add click handlers
+            container.querySelectorAll('.move-item').forEach(function(el) {
+                el.addEventListener('click', function() {
+                    goToPly(parseInt(this.dataset.ply));
+                });
+            });
+        }
+
+        function updatePlyCounter() {
+            document.getElementById('plyCounter').textContent = `Move: ${currentPly} / ${totalPlies}`;
+        }
+
+        async function goForward() {
+            if (currentPly < totalPlies) {
+                await goToPly(currentPly + 1);
+                await analyzePosition();
+            }
+        }
+
+        async function goBack() {
+            if (currentPly > 0) {
+                await goToPly(currentPly - 1);
+                await analyzePosition();
+            }
+        }
+
+        async function goToFirst() {
+            await goToPly(0);
+            await analyzePosition();
+        }
+
+        async function goToLast() {
+            await goToPly(totalPlies);
+            await analyzePosition();
+        }
+
+        async function updateSettings() {
+            const settings = {
+                show_evaluation: document.getElementById('showEvaluation').checked,
+                show_best_moves: document.getElementById('showBestMoves').checked,
+                num_best_moves: parseInt(document.getElementById('numBestMoves').value),
+                time_limit: parseFloat(document.getElementById('timeLimit').value)
+            };
+
+            try {
+                const response = await fetch('/settings', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(settings)
+                });
+
+                // Update evaluation display visibility
+                document.getElementById('evaluationSection').style.display =
+                    settings.show_evaluation ? 'block' : 'none';
+
+                // Refresh current analysis
+                if (currentGameIndex >= 0) {
+                    await getBestMoves(board.fen());
+                    if (settings.show_evaluation) {
+                        await analyzePosition();
+                    }
+                }
+            } catch (error) {
+                console.error('Error updating settings:', error);
+            }
+        }
+
+        async function updatePuzzleSettings() {
+            const settings = {
+                puzzle_mode: document.getElementById('puzzleModeToggle').checked,
+                success_criterion: document.getElementById('successCriterion').value,
+                min_class: document.getElementById('minClass').value
+            };
+
+            try {
+                const response = await fetch('/puzzle_settings', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(settings)
+                });
+                puzzleMode = settings.puzzle_mode;
+            } catch (error) {
+                console.error('Error updating puzzle settings:', error);
+            }
+        }
+
+        async function loadPuzzles() {
+            const minClass = document.getElementById('minClass').value;
+            const container = document.getElementById('puzzlesList');
+
+            document.getElementById('puzzleSettings').style.display = 'block';
+
+            // Show loading status
+            container.innerHTML = `
+                <div class="text-center py-3">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="text-muted mt-2">
+                        <strong>Analyzing games for puzzles...</strong><br>
+                        <small>This uses Stockfish and may take 30-60 seconds for the first analysis.</small>
+                    </p>
+                </div>
+            `;
+
+            try {
+                const response = await fetch(`/puzzles?min_class=${minClass}`);
+                const data = await response.json();
+                if (response.ok) {
+                    displayPuzzles(data.puzzles, data.current_puzzle_index);
+                } else {
+                    container.innerHTML = `<p class="text-danger">Error: ${data.error}</p>`;
+                }
+            } catch (error) {
+                console.error('Error loading puzzles:', error);
+                container.innerHTML = `<p class="text-danger">Failed to load puzzles. Please try again.</p>`;
+            }
+        }
+
+        function displayPuzzles(puzzles, currentIndex) {
+            const container = document.getElementById('puzzlesList');
+
+            if (!puzzles || puzzles.length === 0) {
+                const minClass = document.getElementById('minClass').value;
+                let message = '<p class="text-muted">No puzzles found at this classification level.</p>';
+                if (minClass === 'blunder') {
+                    message += '<p class="text-info small">Try selecting "Mistakes+" to include both blunders and mistakes.</p>';
+                } else if (minClass === 'mistake') {
+                    message += '<p class="text-info small">Try selecting "Inaccuracies+" to include all puzzle types.</p>';
+                }
+                container.innerHTML = message;
+                return;
+            }
+
+            let html = `<h6 class="mt-2">Puzzles (${puzzles.length})</h6>`;
+            html += '<div class="list-group">';
+
+            // Group by game
+            var grouped = {};
+            puzzles.forEach(function(p, i) {
+                var key = 'Game ' + (p.game_index + 1);
+                if (!grouped[key]) grouped[key] = [];
+                grouped[key].push({puzzle: p, index: i});
+            });
+
+            Object.keys(grouped).forEach(function(gameName) {
+                html += `<div class="list-group-item bg-secondary text-white">${gameName}</div>`;
+                grouped[gameName].forEach(function(item) {
+                    var p = item.puzzle;
+                    var i = item.index;
+                    var isCurrent = i === currentIndex;
+                    var classLabel = p.classification.charAt(0).toUpperCase() + p.classification.slice(1);
+                    html += `
+                        <div class="list-group-item puzzle-item ${p.classification} ${isCurrent ? 'current-puzzle' : ''}" data-puzzle="${i}">
+                            <div class="d-flex justify-content-between">
+                                <span>${classLabel}: ${p.san}</span>
+                                <small class="${p.eval_change > 0 ? 'text-danger' : ''}">${p.eval_change.toFixed(1)}</small>
+                            </div>
+                            <small class="text-muted">Move ${p.ply + 1}</small>
+                        </div>
+                    `;
+                });
+            });
+
+            html += '</div>';
+
+            // Add success message at top
+            const minClass = document.getElementById('minClass').value;
+            let classLabel = minClass === 'blunder' ? 'Blunders Only' :
+                           minClass === 'mistake' ? 'Mistakes+' : 'Inaccuracies+';
+            const successMsg = `<div class="alert alert-success py-1 small">
+                ✓ Analysis complete! Found ${puzzles.length} ${classLabel}
+            </div>`;
+
+            container.innerHTML = successMsg + html;
+
+            // Add click handlers
+            container.querySelectorAll('.puzzle-item').forEach(function(el) {
+                el.addEventListener('click', function() {
+                    const puzzleIndex = parseInt(this.dataset.puzzle);
+                    goToPuzzle(puzzleIndex);
+                });
+            });
+        }
+
+        async function goToPuzzle(puzzleIndex) {
+            try {
+                const response = await fetch(`/goto_puzzle?puzzle=${puzzleIndex}`);
+                const data = await response.json();
+                if (response.ok) {
+                    document.getElementById('gameTitle').textContent =
+                        `Puzzle ${puzzleIndex + 1}: Find the best move!`;
+                    document.getElementById('puzzleMessage').style.display = 'block';
+                    document.getElementById('puzzleResult').style.display = 'none';
+
+                    board.position(data.fen);
+                    game.load(data.fen);
+                    currentPly = data.ply;
+                    updatePlyCounter();
+
+                    // Highlight puzzle in list
+                    document.querySelectorAll('.puzzle-item').forEach(function(el) {
+                        el.classList.remove('current-puzzle');
+                    });
+                    const current = document.querySelector(`.puzzle-item[data-puzzle="${puzzleIndex}"]`);
+                    if (current) current.classList.add('current-puzzle');
+
+                    // Get best moves
+                    await getBestMoves(data.fen);
+                }
+            } catch (error) {
+                console.error('Error going to puzzle:', error);
+            }
+        }
+
+        function startPuzzle() {
+            if (!document.getElementById('puzzleModeToggle').checked) {
+                alert('Please enable puzzle mode first');
+                return;
+            }
+            goToPuzzle(0);
+        }
+
+        async function checkPuzzleMove(moveUci) {
+            const resultDiv = document.getElementById('puzzleResult');
+            resultDiv.style.display = 'block';
+            resultDiv.textContent = 'Checking...';
+
+            try {
+                const response = await fetch('/puzzle_check', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({move: moveUci})
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    resultDiv.textContent = data.message;
+                    resultDiv.className = 'result-message ' + (data.correct ? 'correct' : 'incorrect');
+
+                    if (data.correct && data.next_puzzle !== null) {
+                        setTimeout(() => {
+                            goToPuzzle(data.next_puzzle);
+                        }, 1500);
+                    }
+                }
+            } catch (error) {
+                console.error('Error checking puzzle move:', error);
+            }
+        }
+
+        // Hide evaluation initially
+        document.getElementById('evaluationSection').style.display = 'none';
+    </script>
+</body>
+</html>

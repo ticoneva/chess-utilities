@@ -75,21 +75,32 @@
         }
         .move-item.blunder {
             background-color: #ffe5e5;
-            border: 1px solid #dc3545;
+            border-left: 3px solid #dc3545;
         }
         .move-item.mistake {
             background-color: #fff3cd;
-            border: 1px solid #fd7e14;
+            border-left: 3px solid #fd7e14;
         }
         .move-item.inaccuracy {
             background-color: #fffbf0;
-            border: 1px solid #ffc107;
+            border-left: 3px solid #ffc107;
         }
-        .move-item.current.blunder,
-        .move-item.current.mistake,
-        .move-item.current.inaccuracy {
+        .move-item.current {
             background-color: #cce5ff;
-            border: 1px solid #cce5ff;
+            font-weight: bold;
+        }
+        /* Current move with classification: keep classification color, add blue border indicator */
+        .move-item.current.blunder {
+            background-color: #ffe5e5 !important;
+            border: 2px solid #0d6efd !important;
+        }
+        .move-item.current.mistake {
+            background-color: #fff3cd !important;
+            border: 2px solid #0d6efd !important;
+        }
+        .move-item.current.inaccuracy {
+            background-color: #fffbf0 !important;
+            border: 2px solid #0d6efd !important;
         }
         .sidebar {
             max-height: 90vh;
@@ -109,6 +120,12 @@
             border-radius: 4px;
             margin-top: 10px;
         }
+        #settingsToggle {
+            color: #6c757d;
+        }
+        #settingsToggle:hover {
+            color: #0d6efd;
+        }
         .correct {
             background-color: #d4edda;
             color: #155724;
@@ -124,7 +141,14 @@
         <div class="row">
             <!-- Left Sidebar -->
             <div class="col-md-3 p-3 border-end sidebar">
-                <h4 class="mb-3">Chess Puzzle Generator</h4>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="mb-0">Chess Puzzle Generator</h4>
+                    <button class="btn btn-link p-0" id="settingsToggle" title="Settings">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="bi bi-gear-fill" viewBox="0 0 16 16">
+                            <path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.86z"/>
+                        </svg>
+                    </button>
+                </div>
 
                 <div class="mb-4">
                     <label class="form-label">Load PGN File</label>
@@ -143,7 +167,7 @@
                     <div class="list-group" id="gamesList"></div>
                 </div>
 
-                <div class="mb-4">
+                <div class="mb-4" id="settingsPanel" style="display: none;">
                     <h5>Settings</h5>
                     <div class="form-check mb-2">
                         <input type="checkbox" class="form-check-input" id="showEvaluation" checked>
@@ -246,7 +270,7 @@
                         </button>
                     </li>
                     <li class="nav-item">
-                        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#puzzlesTab">
+                        <button class="nav-link" id="puzzlesTabBtn" data-bs-toggle="tab" data-bs-target="#puzzlesTab">
                             Puzzles
                         </button>
                     </li>
@@ -380,6 +404,10 @@
         document.getElementById('nextBtn').addEventListener('click', goForward);
         document.getElementById('lastBtn').addEventListener('click', goToLast);
         document.getElementById('flipBoardBtn').addEventListener('click', flipBoard);
+        document.getElementById('settingsToggle').addEventListener('click', function() {
+            const settingsPanel = document.getElementById('settingsPanel');
+            settingsPanel.style.display = settingsPanel.style.display === 'none' ? 'block' : 'none';
+        });
         document.getElementById('showEvaluation').addEventListener('change', updateSettings);
         document.getElementById('showBestMoves').addEventListener('change', updateSettings);
         document.getElementById('numBestMoves').addEventListener('input', function(e) {
@@ -404,6 +432,10 @@
         });
         document.getElementById('successCriterion').addEventListener('change', updatePuzzleSettings);
         document.getElementById('startPuzzle').addEventListener('click', startPuzzle);
+        document.getElementById('puzzlesTabBtn').addEventListener('click', function() {
+            // Only load puzzles when user explicitly clicks on Puzzles tab
+            loadPuzzles();
+        });
 
         // Keyboard navigation
         document.addEventListener('keydown', function(e) {
@@ -418,6 +450,7 @@
         var currentAnalysisAbortController = null;
         var pendingAnalysisFen = null;
         var currentMoveClassifications = {};
+        var plyEvaluations = {};  // Store evaluation at each ply from navigation
 
         // Functions
         async function uploadPGN() {
@@ -526,6 +559,9 @@
 
             // Reset to start of game
             currentPly = 0;
+            // Reset navigation analysis state for new game
+            plyEvaluations = {};
+            currentMoveClassifications = {};
             goToPly(0);
 
             // Show navigation and move list
@@ -533,8 +569,7 @@
             document.getElementById('moveListSection').style.display = 'block';
             document.getElementById('evaluationSection').style.display = 'block';
 
-            // Load puzzles (async)
-            loadPuzzles();
+            // Don't auto-load puzzles anymore - only when user clicks Puzzles tab
         }
 
         async function goToPly(ply) {
@@ -581,7 +616,7 @@
                     const boardResponse = await fetch(`/board?ply=${ply}`);
                     const boardData = await boardResponse.json();
                     if (boardResponse.ok) {
-                        updateMoveList(boardData.move_list, boardData.ply);
+                        updateMoveList(boardData.move_list, boardData.ply, currentMoveClassifications);
                     }
                 }
             } catch (error) {
@@ -601,6 +636,10 @@
             const currentFen = fen;
             currentAnalysisAbortController = new AbortController();
 
+            // Determine which ply we're analyzing and which move to classify
+            const positionPly = currentPly;  // The position index we're analyzing
+            const movePly = positionPly - 1; // The move index that led to this position
+
             // Stage 1: Quick analysis (0.01s) - always show immediately and cache
             try {
                 const quickResponse = await fetch(`/analyze_quick?fen=${encodeURIComponent(fen)}`, {
@@ -614,6 +653,19 @@
                         full: null
                     };
                     updateEvaluation(quickData.evaluation, quickData.wdl);
+
+                    // Store this evaluation for the position
+                    plyEvaluations[positionPly] = quickData.evaluation;
+
+                    // Classify the move that led to this position
+                    // We need the evaluation from the previous position (positionPly - 1)
+                    const previousPositionEval = plyEvaluations[positionPly - 1];
+                    if (previousPositionEval !== undefined && movePly >= 0) {
+                        console.log(`Classifying move ${movePly}: before=${previousPositionEval.toFixed(2)}, after=${quickData.evaluation.toFixed(2)}`);
+                        classifyMove(movePly, previousPositionEval, quickData.evaluation, positionPly);
+                    } else {
+                        console.log(`Skipping classification: previousPositionEval=${previousPositionEval}, movePly=${movePly}`);
+                    }
                 }
             } catch (error) {
                 if (error.name !== 'AbortError') {
@@ -642,10 +694,77 @@
                     };
                     updateEvaluation(fullData.evaluation, fullData.wdl);
                     displayBestMoves(fullData.best_moves);
+
+                    // Update evaluation for this position
+                    plyEvaluations[positionPly] = fullData.evaluation;
+
+                    // Re-classify with full analysis
+                    const previousPositionEval = plyEvaluations[positionPly - 1];
+                    if (previousPositionEval !== undefined && movePly >= 0) {
+                        console.log(`Re-classifying move ${movePly}: before=${previousPositionEval.toFixed(2)}, after=${fullData.evaluation.toFixed(2)}`);
+                        classifyMove(movePly, previousPositionEval, fullData.evaluation, positionPly);
+                    }
                 }
             } catch (error) {
                 if (error.name !== 'AbortError') {
                     console.error('Error in full analysis:', error);
+                }
+            }
+        }
+
+        function classifyMove(ply, beforeEval, afterEval, currentPly) {
+            // Classification thresholds (centipawns in pawn units)
+            const BLUNDER_THRESHOLD = 3.0;
+            const MISTAKE_THRESHOLD = 1.0;
+            const INACCURACY_THRESHOLD = 0.5;
+
+            // Determine who made the move at this ply
+            // ply 0 = white's first move, ply 1 = black's first move, etc.
+            const isWhiteMove = (ply % 2 === 0);
+
+            let evalChange;
+            if (isWhiteMove) {
+                // White made the move: positive change = bad for white
+                evalChange = beforeEval - afterEval;
+            } else {
+                // Black made the move: positive change = bad for black
+                evalChange = afterEval - beforeEval;
+            }
+
+            let classification = null;
+            if (evalChange >= BLUNDER_THRESHOLD) {
+                classification = 'blunder';
+                console.log(`Ply ${ply} classified as blunder: eval change = ${evalChange.toFixed(2)} (isWhiteMove=${isWhiteMove})`);
+            } else if (evalChange >= MISTAKE_THRESHOLD) {
+                classification = 'mistake';
+                console.log(`Ply ${ply} classified as mistake: eval change = ${evalChange.toFixed(2)} (isWhiteMove=${isWhiteMove})`);
+            } else if (evalChange >= INACCURACY_THRESHOLD) {
+                classification = 'inaccuracy';
+                console.log(`Ply ${ply} classified as inaccuracy: eval change = ${evalChange.toFixed(2)} (isWhiteMove=${isWhiteMove})`);
+            }
+
+            // Store classification
+            if (classification) {
+                currentMoveClassifications[ply] = classification;
+                console.log(`Stored classification for ply ${ply}: ${classification}`);
+
+                // Directly update the move item in the DOM
+                const moveItem = document.querySelector(`.move-item[data-ply="${ply}"]`);
+                console.log(`Looking for move item with data-ply="${ply}":`, moveItem);
+                if (moveItem) {
+                    const isCurrent = moveItem.classList.contains('current');
+                    console.log(`  Move is current: ${isCurrent}, classes before:`, moveItem.className);
+                    // Remove old classification classes
+                    moveItem.classList.remove('blunder', 'mistake', 'inaccuracy');
+                    // Add new classification
+                    moveItem.classList.add(classification);
+                    console.log(`  Added ${classification} class, classes after:`, moveItem.className);
+                } else {
+                    console.log(`  Move item not found in DOM! All move items:`,
+                        Array.from(document.querySelectorAll('.move-item')).map(el => ({
+                            ply: el.dataset.ply,
+                            classes: el.className
+                        })));
                 }
             }
         }
@@ -740,6 +859,7 @@
 
         function updateMoveList(moveList, currentPly, moveClassifications) {
             const container = document.getElementById('moveList');
+            console.log('updateMoveList called with currentPly:', currentPly, 'classifications:', moveClassifications);
             let html = '';
 
             for (let i = 0; i < moveList.length; i += 2) {
@@ -751,6 +871,9 @@
                     const isCurrent = currentPly > 0 && whiteMove.ply === currentPly - 1;
                     const classification = moveClassifications && moveClassifications[whiteMove.ply];
                     const classStr = `move-item ${isCurrent ? 'current' : ''} ${classification || ''}`;
+                    if (classification) {
+                        console.log(`  White move ply ${whiteMove.ply}: classification=${classification}, isCurrent=${isCurrent}`);
+                    }
                     html += `<span class="${classStr}" data-ply="${whiteMove.ply}">${whiteMove.san}</span> `;
                 }
 
@@ -759,6 +882,9 @@
                     const isCurrent = blackMove.ply === currentPly - 1;
                     const classification = moveClassifications && moveClassifications[blackMove.ply];
                     const classStr = `move-item ${isCurrent ? 'current' : ''} ${classification || ''}`;
+                    if (classification) {
+                        console.log(`  Black move ply ${blackMove.ply}: classification=${classification}, isCurrent=${isCurrent}`);
+                    }
                     html += `<span class="${classStr}" data-ply="${blackMove.ply}">${blackMove.san}</span> `;
                 }
 
@@ -771,7 +897,8 @@
             // Add click handlers
             container.querySelectorAll('.move-item').forEach(function(el) {
                 el.addEventListener('click', function() {
-                    goToPly(parseInt(this.dataset.ply));
+                    // ply is the move index, so go to the position after this move (ply + 1)
+                    goToPly(parseInt(this.dataset.ply) + 1);
                 });
             });
         }

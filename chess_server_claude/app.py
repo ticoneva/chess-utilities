@@ -701,6 +701,10 @@ def analyze_position_with_time_limit(game_state: GameState, fen: str, time_limit
         else:
             eval_score = 0
 
+        # Flip score if it's black's turn, so display is always from white's perspective
+        if score and board.turn == chess.BLACK:
+            eval_score = -eval_score
+
         # Get WDL
         if score and hasattr(score, "wdl"):
             wdl = score.wdl()
@@ -755,6 +759,10 @@ def _get_best_moves_for_limit(self, board: chess.Board, engine: Any, time_limit)
         if move_uci in seen_moves:
             continue
         seen_moves.add(move_uci)
+
+        # Flip score if it's black's turn, so display is always from white's perspective
+        if board.turn == chess.BLACK:
+            cp = -cp
 
         best_moves.append({
             "san": move_san,

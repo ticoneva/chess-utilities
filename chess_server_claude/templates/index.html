@@ -513,25 +513,34 @@
             const gamesList = document.getElementById('gamesList');
             gamesList.innerHTML = '';
 
-            // Fetch game info for all games
+            // Fetch all game info in parallel, then add in order
+            const fetchPromises = [];
             for (let i = 0; i < numGames; i++) {
-                fetchGameInfo(i);
+                fetchPromises.push(
+                    fetch(`/game_info?game=${i}`)
+                        .then(response => response.json())
+                        .then(data => ({ gameIndex: i, data }))
+                        .catch(error => {
+                            console.error(`Error fetching game ${i}:`, error);
+                            return null;
+                        })
+                );
             }
-        }
 
-        async function fetchGameInfo(gameIndex) {
-            try {
-                const response = await fetch(`/game_info?game=${gameIndex}`);
-                const data = await response.json();
-                if (response.ok) {
-                    addGameToList(gameIndex, data);
-                    if (currentGameIndex === -1) {
-                        selectGame(gameIndex);
-                    }
+            Promise.all(fetchPromises).then((results) => {
+                // Sort by gameIndex to ensure order, filter out failed fetches
+                const sortedResults = results.filter(r => r !== null).sort((a, b) => a.gameIndex - b.gameIndex);
+
+                // Add games to DOM in order
+                sortedResults.forEach(result => {
+                    addGameToList(result.gameIndex, result.data);
+                });
+
+                // Select first game
+                if (currentGameIndex === -1 && sortedResults.length > 0) {
+                    selectGame(sortedResults[0].gameIndex);
                 }
-            } catch (error) {
-                console.error('Error fetching game info:', error);
-            }
+            });
         }
 
         function addGameToList(gameIndex, data) {
@@ -735,6 +744,13 @@
         }
 
         function classifyMove(ply, beforeEval, afterEval, currentPly) {
+            // Exclude white's first move (ply 0) from blunder analysis
+            // Non-standard openings can look like mistakes from Stockfish's perspective
+            if (ply === 0) {
+                console.log(`Skipping classification for ply 0 (white's first move)`);
+                return null;
+            }
+
             // Classification thresholds (centipawns in pawn units)
             const BLUNDER_THRESHOLD = 3.0;
             const MISTAKE_THRESHOLD = 1.0;

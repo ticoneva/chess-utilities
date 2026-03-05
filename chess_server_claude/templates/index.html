@@ -308,9 +308,6 @@
                                     <option value="any">Any good move</option>
                                 </select>
                             </div>
-                            <button class="btn btn-primary w-100" id="startPuzzle">
-                                Start Puzzles
-                            </button>
                         </div>
                         <div id="puzzlesList">
                             <p class="text-muted">Load a game to see puzzles</p>
@@ -469,7 +466,6 @@
             loadPuzzles();
         });
         document.getElementById('successCriterion').addEventListener('change', updatePuzzleSettings);
-        document.getElementById('startPuzzle').addEventListener('click', startPuzzle);
         document.getElementById('puzzlesTabBtn').addEventListener('click', function() {
             // Only load puzzles when user explicitly clicks on Puzzles tab
             loadPuzzles();
@@ -1408,6 +1404,11 @@
         }
 
         async function goToPuzzle(puzzleIndex) {
+            // Enable puzzle mode when user clicks on a puzzle
+            puzzleMode = true;
+            document.getElementById('successCriterionSection').style.display = 'block';
+            updatePuzzleSettings();
+
             try {
                 const response = await fetch(`/goto_puzzle?puzzle=${puzzleIndex}`);
                 const data = await response.json();
@@ -1450,13 +1451,6 @@
             } catch (error) {
                 console.error('Error going to puzzle:', error);
             }
-        }
-
-        function startPuzzle() {
-            puzzleMode = true;
-            document.getElementById('successCriterionSection').style.display = 'block';
-            updatePuzzleSettings();
-            goToPuzzle(0);
         }
 
         async function checkPuzzleMove(moveUci) {

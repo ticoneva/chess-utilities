@@ -95,20 +95,37 @@ class GameState:
                 "black_elo": game.headers.get("BlackElo", ""),
             }
 
-            # Convert game to move list
+            # Convert game to move list, capturing NAGs for annotations
             board = game.board()
             move_list = []
             node = game
             ply = 0
+            has_annotations = False
 
             while node.variations:
                 node = node.variations[0]
                 move = node.move
+                nags = node.nags if node.nags else set()
+
+                # Check for blunder (NAG 4), mistake (NAG 2), or inaccuracy (NAG 6)
+                classification_from_nag = None
+                if 4 in nags:  # ?? blunder
+                    classification_from_nag = "blunder"
+                    has_annotations = True
+                elif 2 in nags:  # ? mistake
+                    classification_from_nag = "mistake"
+                    has_annotations = True
+                elif 6 in nags:  # ?! inaccuracy
+                    classification_from_nag = "inaccuracy"
+                    has_annotations = True
+
                 move_list.append({
                     "san": board.san(move),
                     "uci": move.uci(),
                     "ply": ply,
                     "comment": node.comment,
+                    "nags": nags,
+                    "classification_from_nag": classification_from_nag,
                 })
                 board.push(move)
                 ply += 1
@@ -117,6 +134,8 @@ class GameState:
                 "headers": headers,
                 "moves": move_list,
                 "total_plies": len(move_list),
+                "has_annotations": has_annotations,  # Track if PGN had annotations
+                "pgn_game": game,  # Store original game for PGN export
             })
 
     def _load_current_game(self) -> None:
@@ -171,8 +190,19 @@ class GameState:
                     "puzzles": [],
                 })
             return
-            self._game_puzzles[game_index] = []
+
+        # Check if PGN already has annotations (blunders, mistakes, inaccuracies)
+        if game_data.get("has_annotations", False):
+            # Use existing annotations instead of running engine
+            puzzles = self._extract_puzzles_from_annotations(game_index, moves, send_progress)
+            self._game_puzzles[game_index] = puzzles
             self._game_analyzed[game_index] = True
+            if send_progress and self._analysis_queue:
+                self._analysis_queue.put({
+                    "type": "game_complete",
+                    "game_index": game_index,
+                    "puzzles": puzzles,
+                })
             return
 
         board = chess.Board()
@@ -291,6 +321,48 @@ class GameState:
                 "game_index": game_index,
                 "puzzles": puzzles,
             })
+
+    def _extract_puzzles_from_annotations(self, game_index: int, moves: List[Dict[str, Any]], send_progress: bool = False) -> List[Dict[str, Any]]:
+        """Extract puzzles from existing PGN annotations (NAGs) without running engine."""
+        puzzles = []
+        board = chess.Board()
+
+        for i, move_info in enumerate(moves):
+            # Send progress update
+            if send_progress and self._analysis_queue:
+                self._analysis_queue.put({
+                    "type": "move_progress",
+                    "game_index": game_index,
+                    "move_number": i,
+                    "move_san": move_info["san"],
+                    "total_moves": len(moves),
+                })
+
+            classification = move_info.get("classification_from_nag")
+            if classification:
+                # Get best moves from the position using engine
+                move = chess.Move.from_uci(move_info["uci"])
+                with chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH) as engine:
+                    engine.configure({"Skill Level": 20, "Threads": self.settings["threads"]})
+                    time_limit = chess.engine.Limit(time=self.settings["puzzle_time_limit"])
+                    best_moves_info = self._get_best_moves(board, engine, time_limit)
+
+                puzzles.append({
+                    "ply": i,
+                    "san": move_info["san"],
+                    "uci": move_info["uci"],
+                    "before_eval": 0,  # Not available from annotations
+                    "after_eval": 0,
+                    "eval_change": 0,
+                    "classification": classification,
+                    "game_index": game_index,
+                    "best_moves": best_moves_info,
+                    "from_annotation": True,  # Mark as from PGN annotation
+                })
+
+            board.push(chess.Move.from_uci(move_info["uci"]))
+
+        return puzzles
 
     def analyze_games_async(self, min_class: str) -> Queue:
         """Analyze all games asynchronously and return a queue for progress updates."""
@@ -433,9 +505,14 @@ class GameState:
     def get_board_at_ply(self, ply: int) -> chess.Board:
         """Get board state at specific ply."""
         board = chess.Board()
+        # Use game data directly if moves not loaded
+        if hasattr(self, 'moves') and self.moves:
+            moves = self.moves
+        else:
+            moves = self.games[self.current_game_index]["moves"]
         for i in range(ply):
-            if i < len(self.moves):
-                board.push(chess.Move.from_uci(self.moves[i]["uci"]))
+            if i < len(moves):
+                board.push(chess.Move.from_uci(moves[i]["uci"]))
         return board
 
     def get_fen_at_ply(self, ply: int) -> str:
@@ -666,6 +743,10 @@ def board():
     game_state = games_db[session_id]
     ply = int(request.args.get("ply", 0))
 
+    # Ensure game is loaded
+    if not hasattr(game_state, 'moves') or game_state.moves is None:
+        game_state._load_current_game()
+
     if ply < 0 or ply > game_state.total_plies:
         return jsonify({"error": "Invalid ply"}), 400
 
@@ -685,9 +766,9 @@ def board():
     move_list = []
     for i, mv in enumerate(game_state.moves):
         if i == ply:
-            move_info = mv
-        # Add classification to move data
-        move_data = mv.copy()
+            move_info = {k: v for k, v in mv.items() if k not in ("nags", "classification_from_nag")}
+        # Add classification to move data, excluding non-JSON fields
+        move_data = {k: v for k, v in mv.items() if k not in ("nags", "classification_from_nag")}
         move_data["classification"] = ply_classifications.get(i)
         move_list.append(move_data)
 
@@ -1103,6 +1184,81 @@ def load_sample():
         "session_id": session_id,
         "num_games": len(game_state.games),
     })
+
+
+@app.route("/download_annotated_pgn")
+def download_annotated_pgn():
+    """Download PGN with annotations (blunder/mistake/inaccuracy) added."""
+    session_id = session.get("session_id")
+    if session_id not in games_db:
+        return jsonify({"error": "No active session"}), 404
+
+    game_state = games_db[session_id]
+    min_class = request.args.get("min_class", "inaccuracy")
+
+    # Ensure all games are analyzed
+    class_priority = {"blunder": 3, "mistake": 2, "inaccuracy": 1}
+    min_priority = class_priority.get(min_class, 1)
+
+    # Build annotated PGN
+    pgn_output = StringIO()
+
+    for game_idx, game_data in enumerate(game_state.games):
+        # Get puzzles for this game
+        puzzles = game_state._game_puzzles.get(game_idx, [])
+        puzzle_by_ply = {p["ply"]: p for p in puzzles}
+
+        # Build game with annotations
+        game = chess.pgn.Game()
+
+        # Copy headers with proper capitalization
+        header_mapping = {
+            "white": "White",
+            "black": "Black",
+            "event": "Event",
+            "date": "Date",
+            "result": "Result",
+            "white_elo": "WhiteElo",
+            "black_elo": "BlackElo",
+        }
+        for key, value in game_data["headers"].items():
+            pgn_key = header_mapping.get(key, key.capitalize())
+            if value and value != "?":
+                game.headers[pgn_key] = value
+
+        # Add moves with annotations
+        board = chess.Board()
+        node = game
+
+        for i, move_info in enumerate(game_data["moves"]):
+            move = chess.Move.from_uci(move_info["uci"])
+            node = node.add_main_variation(move)
+
+            # Add NAG annotation if this move was classified
+            if i in puzzle_by_ply:
+                puzzle = puzzle_by_ply[i]
+                classification = puzzle["classification"]
+                if class_priority.get(classification, 0) >= min_priority:
+                    if classification == "blunder":
+                        node.nags.add(4)  # ??
+                    elif classification == "mistake":
+                        node.nags.add(2)  # ?
+                    elif classification == "inaccuracy":
+                        node.nags.add(6)  # ?!
+
+        # Write game to output
+        pgn_output.write(str(game))
+        pgn_output.write("\n\n")
+
+    # Return as downloadable file
+    from flask import Response
+    return Response(
+        pgn_output.getvalue(),
+        mimetype="application/x-chess-pgn",
+        headers={
+            "Content-Disposition": "attachment; filename=annotated_games.pgn"
+        }
+    )
 
 
 if __name__ == "__main__":

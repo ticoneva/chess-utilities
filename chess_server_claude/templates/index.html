@@ -1309,6 +1309,14 @@
                         ✓ Analysis complete! Found ${totalPuzzles} ${classLabel}
                     </div>`;
                     resultsDiv.insertAdjacentHTML('afterbegin', header);
+
+                    // Add download button
+                    const downloadBtn = `<div class="mt-2">
+                        <a href="/download_annotated_pgn?min_class=${minClass}" class="btn btn-outline-primary btn-sm w-100" download="annotated_games.pgn">
+                            Download Annotated PGN
+                        </a>
+                    </div>`;
+                    resultsDiv.insertAdjacentHTML('beforeend', downloadBtn);
                 }
             }
         }

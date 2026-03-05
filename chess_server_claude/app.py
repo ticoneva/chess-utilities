@@ -490,105 +490,81 @@ class GameState:
 
         with chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH) as engine:
             engine.configure({"Skill Level": 20, "Threads": self.settings["threads"]})
-            time_limit = chess.engine.Limit(time=self.settings["time_limit"])
+            time_limit = chess.engine.Limit(time=1.0)  # Use 1 second for puzzle checking
 
             # Pop the move to analyze the position
             board.pop()
             best_moves_info = self._get_best_moves(board, engine, time_limit)
 
+            # Evaluate the position before user's move
+            info_before = engine.analyse(board, time_limit)
+            score_before = info_before.get("score")
+            if score_before and score_before.relative.mate():
+                before_cp = score_before.relative.mate() * 100
+            else:
+                before_cp = score_before.relative.score(mate_score=10000) if score_before else 0
+            before_eval = before_cp / 100.0
+
             # Evaluate after user's move
             board.push(move)
-            info = engine.analyse(board, time_limit)
-            score = info.get("score")
+            info_after = engine.analyse(board, time_limit)
+            score_after = info_after.get("score")
 
-            if score and score.relative.mate():
-                after_cp = score.relative.mate() * 100
+            if score_after and score_after.relative.mate():
+                after_cp = score_after.relative.mate() * 100
             else:
-                after_cp = score.white().score(mate_score=10000) if score else 0
+                after_cp = score_after.white().score(mate_score=10000) if score_after else 0
 
             after_eval = after_cp / 100.0
 
-        # Get the original position eval before the blunder move
-        board.pop()  # Back to before user move
-        info2 = engine.analyse(board, time_limit)
-        score2 = info2.get("score")
+            # Calculate eval change (positive = bad for player who just moved)
+            # For the player who just made a move (now opponent to move):
+            # If was white, white made move, eval = before - after
+            # If was black, black made move, eval = after - before
+            if board.turn == chess.BLACK:  # White moved
+                eval_change = before_eval - after_eval
+            else:  # Black moved
+                eval_change = after_eval - before_eval
 
-        if score2 and score2.relative.mate():
-            before_cp = score2.relative.mate() * 100
-        else:
-            before_cp = score2.relative.score(mate_score=10000) if score2 else 0
+            # Check success criteria
+            correct = False
+            message = ""
 
-        before_eval = before_cp / 100.0
+            move_found = False
+            move_score = None
+            move_rank = None
 
-        # Calculate eval change (positive = bad for player who just moved)
-        current_turn = board.turn
-        board.push(move)
-        # For the player who just made a move (now opponent to move):
-        # If was white, white made move, eval = before - after
-        # If was black, black made move, eval = after - before
-        if board.turn == chess.BLACK:  # White moved
-            eval_change = before_eval - after_eval
-        else:  # Black moved
-            eval_change = after_eval - before_eval
+            for i, mv in enumerate(best_moves_info):
+                if mv["uci"] == move_uci:
+                    move_found = True
+                    move_score = mv["score"]
+                    move_rank = i + 1
+                    break
 
-        # Check success criteria
-        correct = False
-        message = ""
-
-        move_found = False
-        move_score = None
-        move_rank = None
-
-        for i, mv in enumerate(best_moves_info):
-            if mv["uci"] == move_uci:
-                move_found = True
-                move_score = mv["score"]
-                move_rank = i + 1
-                break
-
-        if criterium == "best":
-            if move_found and move_rank == 1:
-                correct = True
-                message = "Correct! You found the best move."
-            else:
-                message = "Not the best move. Try again."
-
-        elif criterium == "top3":
-            if move_found and move_rank <= 3:
-                # Also check it's not an inaccuracy
-                board.pop()
-                base_score = before_cp
-                board.push(move)
-                info3 = engine.analyse(board, time_limit)
-                score3 = info3.get("score")
-                if score3 and score3.relative.mate():
-                    new_cp = score3.relative.mate() * 100
-                else:
-                    new_cp = score3.relative.score(mate_score=10000) if score3 else 0
-                new_eval = new_cp / 100.0
-
-                # Change in perspective of the player who made the move
-                if board.turn == chess.BLACK:  # White made move
-                    change = before_eval - new_eval
-                else:  # Black made move
-                    change = new_eval - before_eval
-
-                if change >= INACCURACY_THRESHOLD / 100.0:
-                    message = "Move is top 3 but still an inaccuracy. Try again."
-                else:
+            if criterium == "best":
+                if move_found and move_rank == 1:
                     correct = True
-                    message = "Correct! Good move (in top 3)."
-                board.pop()
-            else:
-                message = "Not in top 3 moves. Try again."
+                    message = "Correct! You found the best move."
+                else:
+                    message = "Not the best move. Try again."
 
-        else:  # any (any good move)
-            board.pop()
-            if eval_change < INACCURACY_THRESHOLD / 100.0:
-                correct = True
-                message = "Correct! That's a good move."
-            else:
-                message = "That's an inaccuracy or worse. Try again."
+            elif criterium == "top3":
+                if move_found and move_rank <= 3:
+                    # Also check it's not an inaccuracy
+                    if eval_change >= INACCURACY_THRESHOLD / 100.0:
+                        message = "Move is top 3 but still an inaccuracy. Try again."
+                    else:
+                        correct = True
+                        message = "Correct! Good move (in top 3)."
+                else:
+                    message = "Not in top 3 moves. Try again."
+
+            else:  # any (any good move)
+                if eval_change < INACCURACY_THRESHOLD / 100.0:
+                    correct = True
+                    message = "Correct! That's a good move."
+                else:
+                    message = "That's an inaccuracy or worse. Try again."
 
         return {
             "correct": correct,
@@ -1017,7 +993,10 @@ def puzzle_check():
     if not move_uci:
         return jsonify({"error": "No move provided"}), 400
 
-    result = game_state.check_puzzle_move(puzzle_index, move_uci)
+    try:
+        result = game_state.check_puzzle_move(puzzle_index, move_uci)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
     # If correct and there's a next puzzle, advance
     if result["correct"]:

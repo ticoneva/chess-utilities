@@ -116,6 +116,11 @@
             flex: 1;
             overflow-y: auto;
         }
+        #puzzlesTab {
+            display: flex;
+            flex-direction: column;
+            max-height: calc(90vh - 100px);
+        }
         .result-message {
             padding: 10px;
             border-radius: 4px;
@@ -309,10 +314,12 @@
                                 </select>
                             </div>
                         </div>
-                        <div id="puzzlesList">
-                            <p class="text-muted">Load a game to see puzzles</p>
+                        <div id="puzzlesListContainer" style="flex: 1; overflow-y: auto; min-height: 0;">
+                            <div id="puzzlesList">
+                                <p class="text-muted">Load a game to see puzzles</p>
+                            </div>
                         </div>
-                        <div id="puzzleDownloadSection" class="mt-2" style="display: none;">
+                        <div id="puzzleDownloadSection" class="mt-2 pt-2 border-top" style="display: none;">
                             <a href="#" id="downloadAnnotatedPgn" class="btn btn-outline-primary btn-sm w-100" download="annotated_games.pgn">
                                 Download Annotated PGN
                             </a>

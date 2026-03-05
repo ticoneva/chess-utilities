@@ -325,11 +325,10 @@ class GameState:
     def _extract_puzzles_from_annotations(self, game_index: int, moves: List[Dict[str, Any]], send_progress: bool = False) -> List[Dict[str, Any]]:
         """Extract puzzles from existing PGN annotations (NAGs) without running engine."""
         puzzles = []
-        board = chess.Board()
 
         for i, move_info in enumerate(moves):
-            # Send progress update
-            if send_progress and self._analysis_queue:
+            # Send progress update (only for a few moves to avoid spam)
+            if send_progress and self._analysis_queue and i % 10 == 0:
                 self._analysis_queue.put({
                     "type": "move_progress",
                     "game_index": game_index,
@@ -340,27 +339,18 @@ class GameState:
 
             classification = move_info.get("classification_from_nag")
             if classification:
-                # Get best moves from the position using engine
-                move = chess.Move.from_uci(move_info["uci"])
-                with chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH) as engine:
-                    engine.configure({"Skill Level": 20, "Threads": self.settings["threads"]})
-                    time_limit = chess.engine.Limit(time=self.settings["puzzle_time_limit"])
-                    best_moves_info = self._get_best_moves(board, engine, time_limit)
-
                 puzzles.append({
                     "ply": i,
                     "san": move_info["san"],
                     "uci": move_info["uci"],
-                    "before_eval": 0,  # Not available from annotations
+                    "before_eval": 0,
                     "after_eval": 0,
                     "eval_change": 0,
                     "classification": classification,
                     "game_index": game_index,
-                    "best_moves": best_moves_info,
-                    "from_annotation": True,  # Mark as from PGN annotation
+                    "best_moves": [],  # Will be fetched on demand when user clicks puzzle
+                    "from_annotation": True,
                 })
-
-            board.push(chess.Move.from_uci(move_info["uci"]))
 
         return puzzles
 
@@ -539,6 +529,15 @@ class GameState:
 
         # Now get the FEN at the puzzle's ply
         fen = self.get_fen_at_ply(ply)
+
+        # If puzzle has no best_moves (from annotation), fetch them now
+        if not puzzle.get("best_moves"):
+            board = self.get_board_at_ply(ply)
+            with chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH) as engine:
+                engine.configure({"Skill Level": 20, "Threads": self.settings["threads"]})
+                time_limit = chess.engine.Limit(time=self.settings["puzzle_time_limit"])
+                puzzle["best_moves"] = self._get_best_moves(board, engine, time_limit)
+
         return {
             "fen": fen,
             "ply": ply,

@@ -1409,9 +1409,10 @@
                     game.load(data.fen);
 
                     // Flip board so the side to move is at the bottom
-                    const turn = game.turn();
-                    if (board.orientation() !== turn) {
-                        board.flip();
+                    const turn = game.turn(); // 'w' or 'b'
+                    const desiredOrientation = turn === 'w' ? 'white' : 'black';
+                    if (board.orientation() !== desiredOrientation) {
+                        board.orientation(desiredOrientation);
                     }
 
                     currentPly = ply;

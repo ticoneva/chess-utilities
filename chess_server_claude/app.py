@@ -494,6 +494,10 @@ class GameState:
 
             # Pop the move to analyze the position
             board.pop()
+
+            # Get SAN notation for the user's move
+            move_san = board.san(move)
+
             best_moves_info = self._get_best_moves(board, engine, time_limit)
 
             # Evaluate the position before user's move
@@ -516,6 +520,18 @@ class GameState:
                 after_cp = score_after.white().score(mate_score=10000) if score_after else 0
 
             after_eval = after_cp / 100.0
+
+            # Get continuation moves (PV) after user's move
+            continuation = []
+            if "pv" in info_after:
+                temp_board = board.copy()
+                for i, pv_move in enumerate(info_after["pv"][:8]):  # Limit to 8 moves
+                    try:
+                        san = temp_board.san(pv_move)
+                        continuation.append(san)
+                        temp_board.push(pv_move)
+                    except:
+                        break
 
             # Calculate eval change (positive = bad for player who just moved)
             # For the player who just made a move (now opponent to move):
@@ -544,35 +560,37 @@ class GameState:
             if criterium == "best":
                 if move_found and move_rank == 1:
                     correct = True
-                    message = "Correct! You found the best move."
+                    message = f"Correct! {move_san} is the best move."
                 else:
-                    message = "Not the best move. Try again."
+                    message = f"{move_san} is not the best move. Try again."
 
             elif criterium == "top3":
                 if move_found and move_rank <= 3:
                     # Also check it's not an inaccuracy
                     if eval_change >= INACCURACY_THRESHOLD / 100.0:
-                        message = "Move is top 3 but still an inaccuracy. Try again."
+                        message = f"{move_san} is in top 3 but still an inaccuracy. Try again."
                     else:
                         correct = True
-                        message = "Correct! Good move (in top 3)."
+                        message = f"Correct! {move_san} is a good move (rank {move_rank})."
                 else:
-                    message = "Not in top 3 moves. Try again."
+                    message = f"{move_san} is not among the top 3 moves. Try again."
 
             else:  # any (any good move)
                 if eval_change < INACCURACY_THRESHOLD / 100.0:
                     correct = True
-                    message = "Correct! That's a good move."
+                    message = f"Correct! {move_san} is a good move."
                 else:
-                    message = "That's an inaccuracy or worse. Try again."
+                    message = f"{move_san} is an inaccuracy or worse. Try again."
 
         return {
             "correct": correct,
             "message": message,
+            "move_san": move_san,
             "move_rank": move_rank,
             "move_score": move_score,
             "best_moves": best_moves_info,
             "eval_change": eval_change,
+            "continuation": continuation,
         }
 
 

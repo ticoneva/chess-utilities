@@ -135,6 +135,15 @@
             background-color: #f8d7da;
             color: #721c24;
         }
+        .continuation-message {
+            padding: 8px;
+            border-radius: 4px;
+            margin-top: 8px;
+            background-color: #e9ecef;
+            color: #495057;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
     </style>
 </head>
 <body>
@@ -247,6 +256,7 @@
                         <strong>Puzzle Mode</strong> - Find the best move!
                     </div>
                     <div id="puzzleResult" class="result-message" style="display: none;"></div>
+                    <div id="puzzleContinuation" class="continuation-message" style="display: none;"></div>
                 </div>
 
                 <!-- Move List -->
@@ -371,9 +381,10 @@
             var move_uci = source + target;
 
             if (puzzleMode) {
-                // Check move in puzzle mode
+                // In puzzle mode, keep the piece on board while checking
+                board.position(game.fen());
+                // Check move in puzzle mode (will snap back if wrong)
                 checkPuzzleMove(move_uci);
-                return 'snapback'; // Don't make the move
             } else {
                 // Normal navigation - create state at new position
                 gameState.position(game.fen());
@@ -1396,6 +1407,13 @@
 
                     board.position(data.fen);
                     game.load(data.fen);
+
+                    // Flip board so the side to move is at the bottom
+                    const turn = game.turn();
+                    if (board.orientation() !== turn) {
+                        board.flip();
+                    }
+
                     currentPly = ply;
                     updatePlyCounter();
 
@@ -1426,8 +1444,10 @@
 
         async function checkPuzzleMove(moveUci) {
             const resultDiv = document.getElementById('puzzleResult');
+            const continuationDiv = document.getElementById('puzzleContinuation');
             resultDiv.style.display = 'block';
             resultDiv.textContent = 'Checking...';
+            continuationDiv.style.display = 'none';
 
             try {
                 const response = await fetch('/puzzle_check', {
@@ -1440,15 +1460,53 @@
                     resultDiv.textContent = data.message;
                     resultDiv.className = 'result-message ' + (data.correct ? 'correct' : 'incorrect');
 
+                    // Show continuation if available
+                    if (data.continuation && data.continuation.length > 0) {
+                        continuationDiv.style.display = 'block';
+                        continuationDiv.textContent = formatContinuation(data.move_san, data.continuation);
+                    }
+
                     if (data.correct && data.next_puzzle !== null) {
                         setTimeout(() => {
                             goToPuzzle(data.next_puzzle);
                         }, 1500);
+                    } else if (!data.correct) {
+                        // Snap back only if the move was wrong
+                        game.undo();
+                        board.position(game.fen());
                     }
                 }
             } catch (error) {
                 console.error('Error checking puzzle move:', error);
+                // Snap back on error too
+                game.undo();
+                board.position(game.fen());
             }
+        }
+
+        function formatContinuation(userMove, continuation) {
+            // Get current move number from the game
+            const moveNumber = Math.ceil((currentPly + 1) / 2);
+            const isWhiteToMove = currentPly % 2 === 0;
+
+            // Format: "12. ..Ne7 13. Qe2 Qe7 14. ..."
+            let result = isWhiteToMove ? `${moveNumber}. ${userMove}` : `${moveNumber}... ${userMove}`;
+
+            // Add continuation moves
+            let turn = !isWhiteToMove; // After user's move, it's opponent's turn
+            let num = moveNumber;
+
+            for (let i = 0; i < continuation.length; i++) {
+                if (turn) {
+                    num++;
+                    result += ` ${num}. ${continuation[i]}`;
+                } else {
+                    result += ` ${continuation[i]}`;
+                }
+                turn = !turn;
+            }
+
+            return result;
         }
 
         // Hide evaluation initially

@@ -290,12 +290,6 @@
                                     <option value="blunder" selected>Blunders Only</option>
                                 </select>
                             </div>
-                            <div class="form-check mb-2">
-                                <input type="checkbox" class="form-check-input" id="puzzleModeToggle">
-                                <label class="form-check-label" for="puzzleModeToggle">
-                                    Puzzle Mode
-                                </label>
-                            </div>
                             <div class="mb-2" id="successCriterionSection" style="display: none;">
                                 <label class="form-label">Success Criterion</label>
                                 <select class="form-select" id="successCriterion">
@@ -457,10 +451,6 @@
         document.getElementById('minClass').addEventListener('change', function(e) {
             updatePuzzleSettings();
             loadPuzzles();
-        });
-        document.getElementById('puzzleModeToggle').addEventListener('change', function(e) {
-            document.getElementById('successCriterionSection').style.display = e.target.checked ? 'block' : 'none';
-            updatePuzzleSettings();
         });
         document.getElementById('successCriterion').addEventListener('change', updatePuzzleSettings);
         document.getElementById('startPuzzle').addEventListener('click', startPuzzle);
@@ -1076,7 +1066,7 @@
 
         async function updatePuzzleSettings() {
             const settings = {
-                puzzle_mode: document.getElementById('puzzleModeToggle').checked,
+                puzzle_mode: puzzleMode,
                 success_criterion: document.getElementById('successCriterion').value,
                 min_class: document.getElementById('minClass').value
             };
@@ -1087,7 +1077,6 @@
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(settings)
                 });
-                puzzleMode = settings.puzzle_mode;
             } catch (error) {
                 console.error('Error updating puzzle settings:', error);
             }
@@ -1429,10 +1418,9 @@
         }
 
         function startPuzzle() {
-            if (!document.getElementById('puzzleModeToggle').checked) {
-                alert('Please enable puzzle mode first');
-                return;
-            }
+            puzzleMode = true;
+            document.getElementById('successCriterionSection').style.display = 'block';
+            updatePuzzleSettings();
             goToPuzzle(0);
         }
 

@@ -569,7 +569,7 @@ class GameState:
 
         with chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH) as engine:
             engine.configure({"Skill Level": 20, "Threads": self.settings["threads"]})
-            time_limit = chess.engine.Limit(time=1.0)  # Use 1 second for puzzle checking
+            time_limit = chess.engine.Limit(time=self.settings["puzzle_time_limit"])
 
             # Pop the move to analyze the position
             board.pop()

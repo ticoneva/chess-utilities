@@ -545,7 +545,7 @@ class GameState:
         }
 
     def check_puzzle_move(
-        self, puzzle_index: int, move_uci: str
+        self, puzzle_index: int, move_uci: str, fen: Optional[str] = None
     ) -> Dict[str, Any]:
         """Check if user's move meets success criteria."""
         filtered = self.get_filtered_puzzles(self.puzzle_settings["min_class"])
@@ -555,8 +555,11 @@ class GameState:
         puzzle = filtered[puzzle_index]
         criterium = self.puzzle_settings["success_criterion"]
 
-        # Analyze moves at the puzzle position
-        board = self.get_board_at_ply(puzzle["ply"])
+        # Use provided FEN (for navigated positions) or fall back to puzzle position
+        if fen:
+            board = chess.Board(fen)
+        else:
+            board = self.get_board_at_ply(puzzle["ply"])
         move = chess.Move.from_uci(move_uci)
 
         try:
@@ -1083,12 +1086,13 @@ def puzzle_check():
 
     puzzle_index = game_state.puzzle_settings["current_puzzle_index"]
     move_uci = data.get("move")
+    fen = data.get("fen")  # Current board position (may differ from puzzle start)
 
     if not move_uci:
         return jsonify({"error": "No move provided"}), 400
 
     try:
-        result = game_state.check_puzzle_move(puzzle_index, move_uci)
+        result = game_state.check_puzzle_move(puzzle_index, move_uci, fen)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

@@ -1532,7 +1532,7 @@
                 const response = await fetch('/puzzle_check', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({move: moveUci})
+                    body: JSON.stringify({move: moveUci, fen: game.fen()})
                 });
                 const data = await response.json();
                 if (response.ok) {

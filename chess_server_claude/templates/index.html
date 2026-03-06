@@ -295,12 +295,12 @@
             <div class="col-md-3 p-3 border-start right-sidebar order-3 order-md-3">
                 <ul class="nav nav-tabs mb-3" role="tablist">
                     <li class="nav-item">
-                        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#bestMovesTab">
+                        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#bestMovesTab">
                             Best Moves
                         </button>
                     </li>
                     <li class="nav-item">
-                        <button class="nav-link" id="puzzlesTabBtn" data-bs-toggle="tab" data-bs-target="#puzzlesTab">
+                        <button class="nav-link active" id="puzzlesTabBtn" data-bs-toggle="tab" data-bs-target="#puzzlesTab">
                             Puzzles
                         </button>
                     </li>
@@ -308,14 +308,14 @@
 
                 <div class="tab-content">
                     <!-- Best Moves Tab -->
-                    <div class="tab-pane fade show active" id="bestMovesTab">
+                    <div class="tab-pane fade" id="bestMovesTab">
                         <div id="bestMovesList">
                             <p class="text-muted">Load a game to see best moves</p>
                         </div>
                     </div>
 
                     <!-- Puzzles Tab -->
-                    <div class="tab-pane fade" id="puzzlesTab">
+                    <div class="tab-pane fade show active" id="puzzlesTab">
                         <div id="puzzleSettings" class="mb-3" style="display: none;">
                             <div class="mb-2">
                                 <label class="form-label">Minimum Classification</label>
@@ -578,6 +578,9 @@
             document.getElementById('gamesSection').style.display = 'block';
             const gamesList = document.getElementById('gamesList');
             gamesList.innerHTML = '';
+
+            // Load puzzles automatically since puzzles is the default tab
+            loadPuzzles();
 
             // Fetch all game info in parallel, then add in order
             const fetchPromises = [];

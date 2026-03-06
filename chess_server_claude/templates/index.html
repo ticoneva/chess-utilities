@@ -19,7 +19,7 @@
         }
         @media (max-width: 767px) {
             #board {
-                width: 100%;
+                width: calc(100vw - 2rem);
                 max-width: 400px;
             }
         }
@@ -34,8 +34,12 @@
         }
         @media (max-width: 767px) {
             .evaluation-bar {
-                width: 100%;
+                width: calc(100vw - 2rem);
                 max-width: 400px;
+            }
+            #boardSection {
+                padding: 0.5rem !important;
+                overflow-x: hidden;
             }
         }
         .wdl-bar {
@@ -242,7 +246,7 @@
             </div>
 
             <!-- Main Content -->
-            <div class="col-md-6 p-3 text-center order-1 order-md-2">
+            <div class="col-md-6 p-3 text-center order-1 order-md-2" id="boardSection">
                 <h4 id="gameTitle" class="mb-3">No Game Loaded</h4>
 
                 <div id="boardContainer">

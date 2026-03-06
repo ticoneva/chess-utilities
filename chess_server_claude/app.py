@@ -642,12 +642,8 @@ class GameState:
 
             elif criterium == "top3":
                 if move_found and move_rank <= 3:
-                    # Also check it's not an inaccuracy
-                    if eval_change >= INACCURACY_THRESHOLD / 100.0:
-                        message = f"{move_san} is in top 3 but still an inaccuracy. Try again."
-                    else:
-                        correct = True
-                        message = f"Correct! {move_san} is a good move (rank {move_rank})."
+                    correct = True
+                    message = f"Correct! {move_san} is a good move (rank {move_rank})."
                 else:
                     message = f"{move_san} is not among the top 3 moves. Try again."
 

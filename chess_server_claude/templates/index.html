@@ -313,6 +313,9 @@
                                     <option value="any">Any good move</option>
                                 </select>
                             </div>
+                            <button class="btn btn-outline-secondary btn-sm w-100" id="showAnswer" style="display: none;">
+                                Show Answer
+                            </button>
                         </div>
                         <div id="puzzlesListContainer" style="flex: 1; overflow-y: auto; min-height: 0;">
                             <div id="puzzlesList">
@@ -473,6 +476,25 @@
             loadPuzzles();
         });
         document.getElementById('successCriterion').addEventListener('change', updatePuzzleSettings);
+        document.getElementById('showAnswer').addEventListener('click', function() {
+            if (window.currentPuzzleBestMove) {
+                const resultDiv = document.getElementById('puzzleResult');
+                resultDiv.style.display = 'block';
+                resultDiv.textContent = `Best move: ${window.currentPuzzleBestMove.san}`;
+                resultDiv.className = 'result-message';
+
+                // Make the move on the board to show it
+                const move = game.move(window.currentPuzzleBestMove.san);
+                if (move) {
+                    board.position(game.fen());
+                    // Undo after a moment so user can try again
+                    setTimeout(() => {
+                        game.undo();
+                        board.position(game.fen());
+                    }, 2000);
+                }
+            }
+        });
         document.getElementById('puzzlesTabBtn').addEventListener('click', function() {
             // Only load puzzles when user explicitly clicks on Puzzles tab
             loadPuzzles();
@@ -1414,7 +1436,16 @@
             // Enable puzzle mode when user clicks on a puzzle
             puzzleMode = true;
             document.getElementById('successCriterionSection').style.display = 'block';
+            document.getElementById('showAnswer').style.display = 'block';
             updatePuzzleSettings();
+
+            // Clear and hide the continuation box
+            const continuationDiv = document.getElementById('puzzleContinuation');
+            continuationDiv.style.display = 'none';
+            continuationDiv.textContent = '';
+
+            // Reset the result message
+            document.getElementById('puzzleResult').style.display = 'none';
 
             try {
                 const response = await fetch(`/goto_puzzle?puzzle=${puzzleIndex}`);
@@ -1427,7 +1458,6 @@
                     document.getElementById('gameTitle').textContent =
                         `Puzzle ${puzzleIndex + 1}: Find the best move!`;
                     document.getElementById('puzzleMessage').style.display = 'block';
-                    document.getElementById('puzzleResult').style.display = 'none';
 
                     board.position(data.fen);
                     game.load(data.fen);
@@ -1454,6 +1484,11 @@
 
                     // Get best moves for this position
                     getBestMoves(data.fen);
+
+                    // Store best move for show answer button
+                    if (puzzle.best_moves && puzzle.best_moves.length > 0) {
+                        window.currentPuzzleBestMove = puzzle.best_moves[0];
+                    }
                 }
             } catch (error) {
                 console.error('Error going to puzzle:', error);

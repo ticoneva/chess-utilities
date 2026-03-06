@@ -401,6 +401,9 @@
         }
 
         function onDrop(source, target) {
+            // Capture FEN before move is applied (for puzzle mode evaluation)
+            var fenBeforeMove = game.fen();
+
             var move = game.move({
                 from: source,
                 to: target,
@@ -416,7 +419,8 @@
                 // In puzzle mode, keep the piece on board while checking
                 board.position(game.fen());
                 // Check move in puzzle mode (will snap back if wrong)
-                checkPuzzleMove(move_uci);
+                // Pass FEN before move so server can evaluate from the correct position
+                checkPuzzleMove(move_uci, fenBeforeMove);
             } else {
                 // Normal navigation - create state at new position
                 gameState.position(game.fen());
@@ -605,10 +609,8 @@
                     addGameToList(result.gameIndex, result.data);
                 });
 
-                // Select first game
-                if (currentGameIndex === -1 && sortedResults.length > 0) {
-                    selectGame(sortedResults[0].gameIndex);
-                }
+                // Don't select first game here - loadPuzzles will handle navigation
+                // via goToPuzzle which sets puzzleMode correctly
             });
         }
 
@@ -1465,6 +1467,11 @@
             document.getElementById('showAnswer').style.display = 'block';
             updatePuzzleSettings();
 
+            // Show navigation and move list sections
+            document.getElementById('navigationSection').style.display = 'block';
+            document.getElementById('moveListSection').style.display = 'block';
+            document.getElementById('evaluationSection').style.display = 'block';
+
             // Clear and hide the continuation box
             const continuationDiv = document.getElementById('puzzleContinuation');
             continuationDiv.style.display = 'none';
@@ -1521,7 +1528,7 @@
             }
         }
 
-        async function checkPuzzleMove(moveUci) {
+        async function checkPuzzleMove(moveUci, fenBeforeMove) {
             const resultDiv = document.getElementById('puzzleResult');
             const continuationDiv = document.getElementById('puzzleContinuation');
             resultDiv.style.display = 'block';
@@ -1532,7 +1539,7 @@
                 const response = await fetch('/puzzle_check', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({move: moveUci, fen: game.fen()})
+                    body: JSON.stringify({move: moveUci, fen: fenBeforeMove})
                 });
                 const data = await response.json();
                 if (response.ok) {

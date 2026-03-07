@@ -13,6 +13,7 @@ from threading import Thread
 from typing import Dict, List, Optional, Any
 
 from flask import Flask, render_template, request, jsonify, session, Response, stream_with_context
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 import chess
 import chess.pgn
@@ -29,6 +30,13 @@ INACCURACY_THRESHOLD = 50
 
 app = Flask(__name__)
 app.secret_key = "chess_puzzle_generator_secret_key_2024"
+
+# Reverse proxy support - trust X-Forwarded-* headers
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
+# Session cookie settings for reverse proxy compatibility
+app.config['SESSION_COOKIE_SECURE'] = False  # Allow HTTP and HTTPS
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 # In-memory session storage
 games_db: Dict[str, "GameState"] = {}

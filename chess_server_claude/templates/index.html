@@ -470,6 +470,10 @@
                 document.getElementById('minClass').value = state.puzzle_settings.min_class;
                 document.getElementById('successCriterion').value = state.puzzle_settings.success_criterion;
 
+                // Apply settings visibility
+                document.getElementById('evaluationSection').style.display =
+                    state.settings.show_evaluation ? 'block' : 'none';
+
                 // Set up the puzzle index to restore BEFORE loading games
                 // (loadGamesList triggers puzzle analysis which will use this)
                 if (state.puzzle_settings.puzzle_mode && state.puzzle_settings.current_puzzle_index >= 0) {
@@ -835,7 +839,9 @@
             // Show navigation and move list (move navigation, not puzzle navigation)
             document.getElementById('navigationSection').style.display = 'block';
             document.getElementById('moveListSection').style.display = 'block';
-            document.getElementById('evaluationSection').style.display = 'block';
+            // Respect the show_evaluation setting
+            document.getElementById('evaluationSection').style.display =
+                document.getElementById('showEvaluation').checked ? 'block' : 'none';
             document.getElementById('moveNavigation').style.display = 'flex';
             document.getElementById('puzzleNavigation').style.display = 'none';
 
@@ -1661,7 +1667,9 @@
 
             // Show navigation section
             document.getElementById('navigationSection').style.display = 'block';
-            document.getElementById('evaluationSection').style.display = 'block';
+            // Respect the show_evaluation setting
+            document.getElementById('evaluationSection').style.display =
+                document.getElementById('showEvaluation').checked ? 'block' : 'none';
 
             // In puzzle mode: show puzzle navigation, hide move list and move navigation
             document.getElementById('moveNavigation').style.display = 'none';

@@ -282,9 +282,6 @@
 
                 <!-- Puzzle Mode Message -->
                 <div id="puzzleMessage" class="mt-3" style="display: none;">
-                    <div class="alert alert-info">
-                        <strong>Puzzle Mode</strong> - Find the best move!
-                    </div>
                     <div id="puzzleResult" class="result-message" style="display: none;"></div>
                     <div id="puzzleContinuation" class="continuation-message" style="display: none;"></div>
                 </div>
@@ -527,8 +524,12 @@
             }
         });
         document.getElementById('puzzlesTabBtn').addEventListener('click', function() {
-            // Only load puzzles when user explicitly clicks on Puzzles tab
-            loadPuzzles();
+            // If puzzles are already loaded, just restore current puzzle state
+            if (window.allPuzzles && window.allPuzzles.length > 0 && window.currentPuzzleIndex !== undefined) {
+                goToPuzzle(window.currentPuzzleIndex);
+            } else {
+                loadPuzzles();
+            }
         });
         document.querySelector('[data-bs-target="#bestMovesTab"]').addEventListener('click', function() {
             // Switch to Best Moves mode - show move navigation

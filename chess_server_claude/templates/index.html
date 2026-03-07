@@ -209,6 +209,13 @@
                 <div class="mb-4" id="settingsPanel" style="display: none;">
                     <h5>Settings</h5>
                     <div class="form-check mb-2">
+                        <input type="checkbox" class="form-check-input" id="anonymousMode">
+                        <label class="form-check-label" for="anonymousMode">
+                            Anonymous Mode
+                        </label>
+                        <small class="text-muted d-block">Hide player names and event names</small>
+                    </div>
+                    <div class="form-check mb-2">
                         <input type="checkbox" class="form-check-input" id="showEvaluation" checked>
                         <label class="form-check-label" for="showEvaluation">
                             Show Evaluation
@@ -379,6 +386,7 @@
         var totalPlies = 0;
         var currentGameIndex = -1;
         var puzzleMode = false;
+        var anonymousMode = false;
 
         // Storage key for localStorage
         var STORAGE_KEY = 'chessPuzzleGeneratorState';
@@ -395,7 +403,8 @@
                         show_best_moves: document.getElementById('showBestMoves').checked,
                         num_best_moves: parseInt(document.getElementById('numBestMoves').value),
                         time_limit: parseFloat(document.getElementById('timeLimit').value),
-                        puzzle_time_limit: parseFloat(document.getElementById('puzzleTimeLimit').value)
+                        puzzle_time_limit: parseFloat(document.getElementById('puzzleTimeLimit').value),
+                        anonymous_mode: document.getElementById('anonymousMode').checked
                     },
                     puzzle_settings: {
                         puzzle_mode: puzzleMode,
@@ -469,6 +478,12 @@
                 // Restore puzzle settings UI
                 document.getElementById('minClass').value = state.puzzle_settings.min_class;
                 document.getElementById('successCriterion').value = state.puzzle_settings.success_criterion;
+
+                // Restore anonymous mode
+                if (state.settings.anonymous_mode !== undefined) {
+                    document.getElementById('anonymousMode').checked = state.settings.anonymous_mode;
+                    anonymousMode = state.settings.anonymous_mode;
+                }
 
                 // Apply settings visibility
                 document.getElementById('evaluationSection').style.display =
@@ -644,6 +659,12 @@
                     });
             }
         });
+        document.getElementById('anonymousMode').addEventListener('change', function(e) {
+            anonymousMode = e.target.checked;
+            updateGameListDisplay();
+            rebuildPuzzleResults();
+            saveStateToStorage();
+        });
         document.getElementById('minClass').addEventListener('change', function(e) {
             updatePuzzleSettings();
             loadPuzzles();
@@ -793,15 +814,76 @@
             button.className = 'list-group-item list-group-item-action';
             button.dataset.gameIndex = gameIndex;
             button.id = `game-${gameIndex}`;
+
+            // Use anonymous names if anonymous mode is enabled
+            const whiteName = anonymousMode ? 'White' : data.headers.white;
+            const blackName = anonymousMode ? 'Black' : data.headers.black;
+            const eventName = anonymousMode ? '' : data.headers.event;
+
+            // In anonymous mode, just show "Game X" without player names
+            const gameTitle = anonymousMode ? `Game ${gameIndex + 1}` : `Game ${gameIndex + 1}: ${whiteName} vs ${blackName}`;
+            const dateInfo = anonymousMode ? '' : data.headers.date;
+
             button.innerHTML = `
                 <div class="d-flex w-100 justify-content-between">
-                    <h6 class="mb-1">${data.headers.white} vs ${data.headers.black}</h6>
+                    <h6 class="mb-1">${gameTitle}</h6>
                     <small>${data.headers.result}</small>
                 </div>
-                <small class="text-muted">${data.headers.date} • ${data.headers.event}</small>
+                <small class="text-muted">${dateInfo}${eventName ? ' • ' + eventName : ''}</small>
             `;
             button.addEventListener('click', () => selectGame(gameIndex));
             gamesList.appendChild(button);
+        }
+
+        function updateGameListDisplay() {
+            // Re-render game list with current anonymous mode setting
+            const gamesList = document.getElementById('gamesList');
+            const buttons = gamesList.querySelectorAll('button');
+            buttons.forEach((button, idx) => {
+                const gameIndex = parseInt(button.dataset.gameIndex);
+                // Fetch game info and update
+                fetch(`game_info?game=${gameIndex}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        const whiteName = anonymousMode ? 'White' : data.headers.white;
+                        const blackName = anonymousMode ? 'Black' : data.headers.black;
+                        const eventName = anonymousMode ? '' : data.headers.event;
+                        const gameTitle = anonymousMode ? `Game ${gameIndex + 1}` : `Game ${gameIndex + 1}: ${whiteName} vs ${blackName}`;
+                        const dateInfo = anonymousMode ? '' : data.headers.date;
+
+                        button.innerHTML = `
+                            <div class="d-flex w-100 justify-content-between">
+                                <h6 class="mb-1">${gameTitle}</h6>
+                                <small>${data.headers.result}</small>
+                            </div>
+                            <small class="text-muted">${dateInfo}${eventName ? ' • ' + eventName : ''}</small>
+                        `;
+                    });
+            });
+
+            // Update game title if a game is selected
+            if (currentGameIndex >= 0) {
+                updateGameTitle();
+            }
+        }
+
+        function updateGameTitle() {
+            if (currentGameIndex < 0) return;
+
+            fetch(`game_info?game=${currentGameIndex}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (anonymousMode) {
+                        document.getElementById('gameTitle').textContent = `Game ${currentGameIndex + 1}`;
+                    } else {
+                        const whiteName = data.headers.white;
+                        const blackName = data.headers.black;
+                        const eventName = data.headers.event;
+
+                        document.getElementById('gameTitle').textContent =
+                            eventName ? `${whiteName} vs ${blackName} - ${eventName}` : `${whiteName} vs ${blackName}`;
+                    }
+                });
         }
 
         async function selectGame(gameIndex) {
@@ -820,9 +902,8 @@
                 const response = await fetch(`game_info?game=${gameIndex}`);
                 const data = await response.json();
                 if (response.ok) {
-                    // Update game title
-                    document.getElementById('gameTitle').textContent =
-                        `${data.headers.white} vs ${data.headers.black} - ${data.headers.event}`;
+                    // Update game title (respects anonymous mode)
+                    updateGameTitle();
                 }
             } catch (error) {
                 console.error('Error switching game:', error);
@@ -1459,24 +1540,27 @@
                 const puzzles = gameData.puzzles;
                 totalPuzzles += puzzles.length;
 
-                // Game header
+                // Game header - use anonymous name if enabled
+                const gameHeader = anonymousMode ? `Game ${parseInt(gameIdx) + 1}` : `${gameData.game_name} (Game ${parseInt(gameIdx) + 1})`;
                 html += `<div class="list-group-item bg-dark text-white small">
-                    ${gameData.game_name} (Game ${parseInt(gameIdx) + 1})
+                    ${gameHeader}
                 </div>`;
 
                 // Puzzles for this game
                 puzzles.forEach(function(p) {
-                    var classLabel = p.classification.charAt(0).toUpperCase() + p.classification.slice(1);
                     var puzzleIndex = window.allPuzzles.length;
                     window.allPuzzles.push(p);
+
+                    // Hide player name in anonymous mode
+                    const playerInfo = anonymousMode ? '' : ` • ${gameData.game_name.split(' vs ')[0]}`;
 
                     html += `
                         <div class="list-group-item puzzle-item ${p.classification}" data-puzzle="${puzzleIndex}">
                             <div class="d-flex justify-content-between">
-                                <span>${classLabel}: ${p.san}</span>
+                                <span>Puzzle ${puzzleIndex + 1}</span>
                                 <small class="${p.eval_change > 0 ? 'text-danger' : ''}">${p.eval_change.toFixed(1)}</small>
                             </div>
-                            <small class="text-muted">Move ${Math.floor(p.ply / 2) + 1} (${p.san}) • ${gameData.game_name.split(' vs ')[0]}</small>
+                            <small class="text-muted">Move ${Math.floor(p.ply / 2) + 1}${playerInfo}</small>
                         </div>
                     `;
                 });

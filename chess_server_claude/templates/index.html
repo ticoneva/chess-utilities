@@ -255,6 +255,12 @@
                             <option value="wdl" selected>Based on WDL Decrease</option>
                         </select>
                     </div>
+                    <div class="mb-2">
+                        <button class="btn btn-outline-primary btn-sm w-100" id="reanalyzeBtn">
+                            Re-evaluate with Engine
+                        </button>
+                        <small class="text-muted d-block mt-1">Run Stockfish analysis even if PGN has annotations</small>
+                    </div>
                     <hr>
                     <div class="mb-2">
                         <label class="form-label">Browser Storage</label>
@@ -683,6 +689,15 @@
             hideMoveList = e.target.checked;
             updateMoveListVisibility();
             saveStateToStorage();
+        });
+        document.getElementById('reanalyzeBtn').addEventListener('click', function(e) {
+            // Clear existing classifications and force re-evaluation
+            currentMoveClassifications = {};
+            window.gamesWithPuzzles = {};
+            window.allPuzzles = [];
+
+            // Trigger forced re-analysis
+            forceReanalyze();
         });
         document.getElementById('minClass').addEventListener('change', function(e) {
             updatePuzzleSettings();
@@ -1441,6 +1456,74 @@
 
         function updateMoveListVisibility() {
             document.getElementById('moveListSection').style.display = hideMoveList ? 'none' : 'block';
+        }
+
+        async function forceReanalyze() {
+            const minClass = document.getElementById('minClass').value;
+            const container = document.getElementById('puzzlesList');
+
+            document.getElementById('puzzleSettings').style.display = 'block';
+
+            // Show initial loading status
+            container.innerHTML = `
+                <div id="puzzleStatus" class="text-center py-3">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="text-muted mt-2">
+                        <strong id="analysisStatus">Re-analyzing with engine...</strong><br>
+                        <small id="gameName">Starting engine analysis...</small>
+                    </p>
+                </div>
+                <div id="puzzleResults"></div>
+            `;
+
+            // Reset puzzle storage
+            window.allPuzzles = [];
+            window.gamesWithPuzzles = {};
+
+            try {
+                const eventSource = new EventSource(`reanalyze_stream?min_class=${minClass}`);
+
+                eventSource.onmessage = function(e) {
+                    console.log('Reanalyze SSE message:', e.data);
+                };
+
+                eventSource.addEventListener('analysis_start', function(e) {
+                    const data = JSON.parse(e.data);
+                    document.getElementById('analysisStatus').textContent = `Re-analyzing ${data.total_games} games with engine...`;
+                });
+
+                eventSource.addEventListener('game_start', function(e) {
+                    const data = JSON.parse(e.data);
+                    document.getElementById('gameName').textContent = `Game ${data.game_index + 1}: ${data.game_name}`;
+                });
+
+                eventSource.addEventListener('move_progress', function(e) {
+                    const data = JSON.parse(e.data);
+                    document.getElementById('gameName').textContent = `Game ${data.game_index + 1}: Move ${data.move_number + 1}/${data.total_moves} - ${data.move_san}`;
+                });
+
+                eventSource.addEventListener('game_complete', function(e) {
+                    const data = JSON.parse(e.data);
+                    updatePuzzleList(data);
+                });
+
+                eventSource.addEventListener('complete', function(e) {
+                    const data = JSON.parse(e.data);
+                    eventSource.close();
+                    finalizePuzzleList(data.total_games);
+                    saveStateToStorage();
+                });
+
+                eventSource.onerror = function(e) {
+                    console.error('Reanalyze SSE error:', e);
+                    eventSource.close();
+                };
+
+            } catch (error) {
+                console.error('Error starting reanalyze SSE:', error);
+            }
         }
 
         async function loadPuzzles() {

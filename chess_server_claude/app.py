@@ -163,8 +163,14 @@ class GameState:
         self.current_ply = 0
         self.current_node = board
 
-    def _analyze_game_moves(self, game_index: int, send_progress: bool = False) -> None:
-        """Find blunders/mistakes/inaccuracies for a specific game using Stockfish."""
+    def _analyze_game_moves(self, game_index: int, send_progress: bool = False, force_engine: bool = False) -> None:
+        """Find blunders/mistakes/inaccuracies for a specific game using Stockfish.
+
+        Args:
+            game_index: Index of the game to analyze
+            send_progress: Whether to send progress updates via queue
+            force_engine: If True, run engine analysis even if PGN has annotations
+        """
         if game_index in self._game_analyzed and self._game_analyzed[game_index]:
             # Already analyzed
             if send_progress and self._analysis_queue:
@@ -200,7 +206,8 @@ class GameState:
             return
 
         # Check if PGN already has annotations (blunders, mistakes, inaccuracies)
-        if game_data.get("has_annotations", False):
+        # Skip engine analysis only if not forced and has annotations
+        if not force_engine and game_data.get("has_annotations", False):
             # Use existing annotations instead of running engine
             puzzles = self._extract_puzzles_from_annotations(game_index, moves, send_progress)
             self._game_puzzles[game_index] = puzzles
@@ -377,6 +384,39 @@ class GameState:
                     break
                 if game_idx not in self._game_analyzed or not self._game_analyzed[game_idx]:
                     self._analyze_game_moves(game_idx, send_progress=True)
+
+            # Send complete signal
+            self._analysis_queue.put({
+                "type": "complete",
+                "total_games": len(self.games),
+            })
+            self._analyzing = False
+
+        Thread(target=analyze_thread, daemon=True).start()
+        return self._analysis_queue
+
+    def analyze_games_async_forced(self, min_class: str) -> Queue:
+        """Force re-analysis of all games with engine, ignoring existing annotations.
+
+        This clears existing analysis and runs Stockfish on all games.
+        """
+        class_priority = {"blunder": 3, "mistake": 2, "inaccuracy": 1}
+        min_priority = class_priority.get(min_class, 1)
+
+        # Clear existing analysis to force re-analysis
+        self._game_analyzed = {}
+        self._game_puzzles = {}
+
+        # Start analysis in background thread
+        self._analysis_queue = Queue()
+        self._analyzing = True
+
+        def analyze_thread():
+            for game_idx in range(len(self.games)):
+                if not self._analyzing:
+                    break
+                # Force engine analysis
+                self._analyze_game_moves(game_idx, send_progress=True, force_engine=True)
 
             # Send complete signal
             self._analysis_queue.put({
@@ -1041,6 +1081,75 @@ def puzzles_stream():
                     yield "data: " + json.dumps(payload) + "\n"
                     yield "\n"
 
+
+                elif message["type"] == "move_progress":
+                    yield "event: move_progress\n"
+                    yield "data: " + json.dumps(message) + "\n"
+                    yield "\n"
+            except:
+                if not game_state._analyzing:
+                    break
+                continue
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+
+@app.route("/reanalyze_stream")
+def reanalyze_stream():
+    """Force re-analysis of all games with engine via SSE, ignoring existing annotations."""
+    session_id = session.get("session_id")
+    if session_id not in games_db:
+        return jsonify({"error": "No active session"}), 404
+
+    game_state = games_db[session_id]
+    min_class = request.args.get("min_class", "inaccuracy")
+
+    class_priority = {"blunder": 3, "mistake": 2, "inaccuracy": 1}
+    min_priority = class_priority.get(min_class, 1)
+
+    def generate():
+        # Start async forced analysis
+        queue = game_state.analyze_games_async_forced(min_class)
+
+        # Send start signal
+        payload = {"total_games": len(game_state.games)}
+        yield "event: analysis_start\n"
+        yield "data: " + json.dumps(payload) + "\n"
+        yield "\n"
+
+        # Stream analysis progress
+        while True:
+            try:
+                message = queue.get(timeout=1)
+                if message["type"] == "complete":
+                    yield "event: complete\n"
+                    yield "data: " + json.dumps(message) + "\n"
+                    yield "\n"
+                    break
+
+                elif message["type"] == "game_complete":
+                    puzzles = [
+                        p for p in message["puzzles"]
+                        if class_priority.get(p["classification"], 0) >= min_priority
+                    ]
+                    game_name = game_state.games[message["game_index"]]["headers"]["white"] + " vs " + game_state.games[message["game_index"]]["headers"]["black"]
+                    payload = {"game_index": message["game_index"], "puzzles": puzzles, "game_name": game_name}
+                    yield "event: game_complete\n"
+                    yield "data: " + json.dumps(payload) + "\n"
+                    yield "\n"
+
+                elif message["type"] == "game_start":
+                    payload = {"game_index": message["game_index"], "game_name": message["game_name"]}
+                    yield "event: game_start\n"
+                    yield "data: " + json.dumps(payload) + "\n"
+                    yield "\n"
 
                 elif message["type"] == "move_progress":
                     yield "event: move_progress\n"

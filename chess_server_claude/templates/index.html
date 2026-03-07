@@ -227,6 +227,12 @@
                             Show Best Moves
                         </label>
                     </div>
+                    <div class="form-check mb-2">
+                        <input type="checkbox" class="form-check-input" id="hideMoveList">
+                        <label class="form-check-label" for="hideMoveList">
+                            Hide Move List
+                        </label>
+                    </div>
                     <div class="mb-2">
                         <label class="form-label">Number of Best Moves</label>
                         <input type="range" class="form-range" min="0" max="5" value="3" id="numBestMoves">
@@ -387,6 +393,7 @@
         var currentGameIndex = -1;
         var puzzleMode = false;
         var anonymousMode = false;
+        var hideMoveList = false;
 
         // Storage key for localStorage
         var STORAGE_KEY = 'chessPuzzleGeneratorState';
@@ -404,7 +411,8 @@
                         num_best_moves: parseInt(document.getElementById('numBestMoves').value),
                         time_limit: parseFloat(document.getElementById('timeLimit').value),
                         puzzle_time_limit: parseFloat(document.getElementById('puzzleTimeLimit').value),
-                        anonymous_mode: document.getElementById('anonymousMode').checked
+                        anonymous_mode: document.getElementById('anonymousMode').checked,
+                        hide_move_list: document.getElementById('hideMoveList').checked
                     },
                     puzzle_settings: {
                         puzzle_mode: puzzleMode,
@@ -483,6 +491,12 @@
                 if (state.settings.anonymous_mode !== undefined) {
                     document.getElementById('anonymousMode').checked = state.settings.anonymous_mode;
                     anonymousMode = state.settings.anonymous_mode;
+                }
+
+                // Restore hide move list
+                if (state.settings.hide_move_list !== undefined) {
+                    document.getElementById('hideMoveList').checked = state.settings.hide_move_list;
+                    hideMoveList = state.settings.hide_move_list;
                 }
 
                 // Apply settings visibility
@@ -665,6 +679,11 @@
             rebuildPuzzleResults();
             saveStateToStorage();
         });
+        document.getElementById('hideMoveList').addEventListener('change', function(e) {
+            hideMoveList = e.target.checked;
+            updateMoveListVisibility();
+            saveStateToStorage();
+        });
         document.getElementById('minClass').addEventListener('change', function(e) {
             updatePuzzleSettings();
             loadPuzzles();
@@ -702,7 +721,7 @@
             puzzleMode = false;
             document.getElementById('moveNavigation').style.display = 'flex';
             document.getElementById('puzzleNavigation').style.display = 'none';
-            document.getElementById('moveListSection').style.display = 'block';
+            document.getElementById('moveListSection').style.display = hideMoveList ? 'none' : 'block';
         });
 
         // Keyboard navigation
@@ -919,7 +938,7 @@
 
             // Show navigation and move list (move navigation, not puzzle navigation)
             document.getElementById('navigationSection').style.display = 'block';
-            document.getElementById('moveListSection').style.display = 'block';
+            document.getElementById('moveListSection').style.display = hideMoveList ? 'none' : 'block';
             // Respect the show_evaluation setting
             document.getElementById('evaluationSection').style.display =
                 document.getElementById('showEvaluation').checked ? 'block' : 'none';
@@ -1418,6 +1437,10 @@
             } catch (error) {
                 console.error('Error updating puzzle settings:', error);
             }
+        }
+
+        function updateMoveListVisibility() {
+            document.getElementById('moveListSection').style.display = hideMoveList ? 'none' : 'block';
         }
 
         async function loadPuzzles() {

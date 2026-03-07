@@ -1205,7 +1205,8 @@
             // Update evaluation bar gradient
             const bar = document.querySelector('.evaluation-bar');
             // Center is 50%, range is about +/- 5 (500cp)
-            const position = Math.min(95, Math.max(5, 50 + (evalScore * 10)));
+            // Positive eval = white advantage = more white (lower black percentage)
+            const position = Math.min(95, Math.max(5, 50 - (evalScore * 10)));
             bar.style.background = `linear-gradient(to right, black ${position}%, white ${position}%)`;
         }
 

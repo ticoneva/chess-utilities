@@ -491,7 +491,7 @@
 
             // Reload current position to re-trigger full analysis
             if (currentPly >= 0) {
-                fetch(`/board?ply=${currentPly}`)
+                fetch(`board?ply=${currentPly}`)
                     .then(response => response.json())
                     .then(data => {
                         if (data.move_list) {
@@ -563,7 +563,7 @@
             formData.append('file', file);
 
             try {
-                const response = await fetch('/upload_pgn', {
+                const response = await fetch('upload_pgn', {
                     method: 'POST',
                     body: formData
                 });
@@ -580,7 +580,7 @@
 
         async function loadSample() {
             try {
-                const response = await fetch('/load_sample');
+                const response = await fetch('load_sample');
                 const data = await response.json();
                 if (response.ok) {
                     loadGamesList(data.num_games);
@@ -604,7 +604,7 @@
             const fetchPromises = [];
             for (let i = 0; i < numGames; i++) {
                 fetchPromises.push(
-                    fetch(`/game_info?game=${i}`)
+                    fetch(`game_info?game=${i}`)
                         .then(response => response.json())
                         .then(data => ({ gameIndex: i, data }))
                         .catch(error => {
@@ -658,7 +658,7 @@
 
             // Tell backend to switch to this game
             try {
-                const response = await fetch(`/game_info?game=${gameIndex}`);
+                const response = await fetch(`game_info?game=${gameIndex}`);
                 const data = await response.json();
                 if (response.ok) {
                     // Update game title
@@ -689,7 +689,7 @@
 
         async function goToPly(ply) {
             try {
-                const response = await fetch(`/board?ply=${ply}`);
+                const response = await fetch(`board?ply=${ply}`);
                 const data = await response.json();
                 if (response.ok) {
                     totalPlies = data.total_plies;
@@ -724,11 +724,11 @@
         async function loadGameForPuzzle(gameIndex, ply) {
             // Load game to get move list
             try {
-                const response = await fetch(`/game_info?game=${gameIndex}`);
+                const response = await fetch(`game_info?game=${gameIndex}`);
                 const data = await response.json();
                 if (response.ok) {
                     // The game is now loaded on the server, fetch its move list
-                    const boardResponse = await fetch(`/board?ply=${ply}`);
+                    const boardResponse = await fetch(`board?ply=${ply}`);
                     const boardData = await boardResponse.json();
                     if (boardResponse.ok) {
                         // Merge server classifications with local ones
@@ -761,7 +761,7 @@
 
             // Stage 1: Quick analysis (0.01s) - always show immediately and cache
             try {
-                const quickResponse = await fetch(`/analyze_quick?fen=${encodeURIComponent(fen)}`, {
+                const quickResponse = await fetch(`analyze_quick?fen=${encodeURIComponent(fen)}`, {
                     signal: currentAnalysisAbortController.signal
                 });
                 const quickData = await quickResponse.json();
@@ -804,7 +804,7 @@
 
             // Stage 2: Full analysis - only display if we're still on the same position
             try {
-                const fullResponse = await fetch(`/analyze?fen=${encodeURIComponent(fen)}`, {
+                const fullResponse = await fetch(`analyze?fen=${encodeURIComponent(fen)}`, {
                     signal: currentAnalysisAbortController.signal
                 });
 
@@ -976,7 +976,7 @@
             }
 
             try {
-                const response = await fetch(`/analyze?fen=${encodeURIComponent(fen)}`);
+                const response = await fetch(`analyze?fen=${encodeURIComponent(fen)}`);
                 const data = await response.json();
                 if (response.ok) {
                     displayBestMoves(data.best_moves);
@@ -1111,7 +1111,7 @@
                 const puzzleSettings = {
                     classification_mode: document.getElementById('classificationMode').value
                 };
-                await fetch('/puzzle_settings', {
+                await fetch('puzzle_settings', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(puzzleSettings)
@@ -1121,7 +1121,7 @@
             }
 
             try {
-                const response = await fetch('/settings', {
+                const response = await fetch('settings', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(settings)
@@ -1154,7 +1154,7 @@
             };
 
             try {
-                const response = await fetch('/puzzle_settings', {
+                const response = await fetch('puzzle_settings', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(settings)
@@ -1189,7 +1189,7 @@
             window.gamesWithPuzzles = {};
 
             try {
-                const eventSource = new EventSource(`/puzzles_stream?min_class=${minClass}`);
+                const eventSource = new EventSource(`puzzles_stream?min_class=${minClass}`);
 
                 eventSource.onmessage = function(e) {
                     console.log('SSE message:', e.data);
@@ -1252,7 +1252,7 @@
                 if (currentGameIndex === data.game_index) {
                     const moveListContainer = document.getElementById('moveList');
                     // Refresh by calling board endpoint to get updated move list
-                    fetch(`/board?ply=${currentPly}`)
+                    fetch(`board?ply=${currentPly}`)
                         .then(response => response.json())
                         .then(boardData => {
                             if (boardData.move_list) {
@@ -1387,7 +1387,7 @@
                     if (downloadSection) {
                         const downloadLink = document.getElementById('downloadAnnotatedPgn');
                         if (downloadLink) {
-                            downloadLink.href = `/download_annotated_pgn?min_class=${minClass}`;
+                            downloadLink.href = `download_annotated_pgn?min_class=${minClass}`;
                         }
                         downloadSection.style.display = 'block';
                     }
@@ -1402,7 +1402,7 @@
             const container = document.getElementById('puzzlesList');
 
             try {
-                const response = await fetch(`/puzzles?min_class=${minClass}`);
+                const response = await fetch(`puzzles?min_class=${minClass}`);
                 const data = await response.json();
                 if (response.ok) {
                     displayPuzzles(data.puzzles, data.current_puzzle_index);
@@ -1504,7 +1504,7 @@
                 // Store current puzzle index for navigation
                 window.currentPuzzleIndex = puzzleIndex;
 
-                const response = await fetch(`/goto_puzzle?puzzle=${puzzleIndex}`);
+                const response = await fetch(`goto_puzzle?puzzle=${puzzleIndex}`);
                 const data = await response.json();
                 if (response.ok) {
                     const puzzle = data.puzzle;
@@ -1574,7 +1574,7 @@
             continuationDiv.style.display = 'none';
 
             try {
-                const response = await fetch('/puzzle_check', {
+                const response = await fetch('puzzle_check', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({move: moveUci, fen: fenBeforeMove})

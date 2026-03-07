@@ -242,6 +242,14 @@
                             <option value="wdl" selected>Based on WDL Decrease</option>
                         </select>
                     </div>
+                    <hr>
+                    <div class="mb-2">
+                        <label class="form-label">Browser Storage</label>
+                        <button class="btn btn-outline-danger btn-sm w-100" id="clearStorageBtn">
+                            Clear Saved Data
+                        </button>
+                        <small class="text-muted d-block mt-1">Clears saved games and settings from browser storage</small>
+                    </div>
                 </div>
             </div>
 
@@ -372,6 +380,133 @@
         var currentGameIndex = -1;
         var puzzleMode = false;
 
+        // Storage key for localStorage
+        var STORAGE_KEY = 'chessPuzzleGeneratorState';
+
+        // Save state to localStorage
+        function saveStateToStorage() {
+            try {
+                var state = {
+                    pgn_string: window.savedPgnString || null,
+                    current_game_index: currentGameIndex,
+                    current_ply: currentPly,
+                    settings: {
+                        show_evaluation: document.getElementById('showEvaluation').checked,
+                        show_best_moves: document.getElementById('showBestMoves').checked,
+                        num_best_moves: parseInt(document.getElementById('numBestMoves').value),
+                        time_limit: parseFloat(document.getElementById('timeLimit').value),
+                        puzzle_time_limit: parseFloat(document.getElementById('puzzleTimeLimit').value)
+                    },
+                    puzzle_settings: {
+                        puzzle_mode: puzzleMode,
+                        success_criterion: document.getElementById('successCriterion').value,
+                        current_puzzle_index: window.currentPuzzleIndex || 0,
+                        min_class: document.getElementById('minClass').value,
+                        classification_mode: document.getElementById('classificationMode').value
+                    }
+                };
+
+                // Only save if we have a PGN
+                if (state.pgn_string) {
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+                    console.log('State saved to localStorage');
+                }
+            } catch (e) {
+                console.error('Error saving state to localStorage:', e);
+            }
+        }
+
+        // Load state from localStorage
+        async function loadStateFromStorage() {
+            try {
+                var savedState = localStorage.getItem(STORAGE_KEY);
+                if (!savedState) {
+                    console.log('No saved state found');
+                    return false;
+                }
+
+                var state = JSON.parse(savedState);
+
+                // Check if we have a PGN to restore
+                if (!state.pgn_string) {
+                    console.log('No PGN in saved state');
+                    return false;
+                }
+
+                console.log('Restoring state from localStorage...');
+                isRestoringState = true;
+
+                // Restore the session on the server
+                var response = await fetch('restore_session', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(state)
+                });
+
+                if (!response.ok) {
+                    console.error('Failed to restore session on server');
+                    isRestoringState = false;
+                    return false;
+                }
+
+                var data = await response.json();
+                console.log('Session restored:', data);
+
+                // Store the PGN string for future saves
+                window.savedPgnString = state.pgn_string;
+
+                // Restore settings UI
+                document.getElementById('showEvaluation').checked = state.settings.show_evaluation;
+                document.getElementById('showBestMoves').checked = state.settings.show_best_moves;
+                document.getElementById('numBestMoves').value = state.settings.num_best_moves;
+                document.getElementById('numBestMovesValue').textContent = state.settings.num_best_moves;
+                document.getElementById('timeLimit').value = state.settings.time_limit;
+                document.getElementById('timeLimitValue').textContent = state.settings.time_limit + 's';
+                document.getElementById('puzzleTimeLimit').value = state.settings.puzzle_time_limit;
+                document.getElementById('puzzleTimeLimitValue').textContent = state.settings.puzzle_time_limit + 's';
+                document.getElementById('classificationMode').value = state.puzzle_settings.classification_mode;
+
+                // Restore puzzle settings UI
+                document.getElementById('minClass').value = state.puzzle_settings.min_class;
+                document.getElementById('successCriterion').value = state.puzzle_settings.success_criterion;
+
+                // Set up the puzzle index to restore BEFORE loading games
+                // (loadGamesList triggers puzzle analysis which will use this)
+                if (state.puzzle_settings.puzzle_mode && state.puzzle_settings.current_puzzle_index >= 0) {
+                    window.restorePuzzleIndex = state.puzzle_settings.current_puzzle_index;
+                    console.log('Will restore to puzzle index:', window.restorePuzzleIndex);
+                }
+
+                // Load the games list (will start puzzle analysis)
+                loadGamesList(data.num_games);
+
+                return true;
+            } catch (e) {
+                console.error('Error loading state from localStorage:', e);
+                isRestoringState = false;
+                return false;
+            }
+        }
+
+        // Clear saved state from localStorage
+        function clearStateFromStorage() {
+            try {
+                localStorage.removeItem(STORAGE_KEY);
+                window.savedPgnString = null;
+                console.log('State cleared from localStorage');
+            } catch (e) {
+                console.error('Error clearing state from localStorage:', e);
+            }
+        }
+
+        // Attempt to restore state on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadStateFromStorage();
+        });
+
+        // Flag to prevent auto-navigation during state restoration
+        var isRestoringState = false;
+
         // Initialize chessboard
         var config = {
             draggable: true,
@@ -461,6 +596,12 @@
         document.getElementById('prevPuzzleBtn').addEventListener('click', goToPrevPuzzle);
         document.getElementById('nextPuzzleBtn').addEventListener('click', goToNextPuzzle);
         document.getElementById('settingsToggle').addEventListener('click', toggleSettings);
+        document.getElementById('clearStorageBtn').addEventListener('click', function() {
+            if (confirm('Are you sure you want to clear all saved data? This will reset your games and settings on the next page load.')) {
+                clearStateFromStorage();
+                alert('Saved data cleared. The page will refresh on next load with a clean state.');
+            }
+        });
         document.getElementById('showEvaluation').addEventListener('change', updateSettings);
         document.getElementById('showBestMoves').addEventListener('change', updateSettings);
         document.getElementById('numBestMoves').addEventListener('input', function(e) {
@@ -570,6 +711,13 @@
                 });
                 const data = await response.json();
                 if (response.ok) {
+                    // Read the file content for storage
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        window.savedPgnString = e.target.result;
+                        saveStateToStorage();
+                    };
+                    reader.readAsText(file);
                     loadGamesList(data.num_games);
                 } else {
                     alert('Error: ' + data.error);
@@ -584,6 +732,12 @@
                 const response = await fetch('load_sample');
                 const data = await response.json();
                 if (response.ok) {
+                    // Fetch the sample.pgn content for storage
+                    const pgnResponse = await fetch('sample.pgn');
+                    if (pgnResponse.ok) {
+                        window.savedPgnString = await pgnResponse.text();
+                        saveStateToStorage();
+                    }
                     loadGamesList(data.num_games);
                 } else {
                     alert('Error: ' + data.error);
@@ -685,6 +839,9 @@
             document.getElementById('moveNavigation').style.display = 'flex';
             document.getElementById('puzzleNavigation').style.display = 'none';
 
+            // Save state after selecting game
+            saveStateToStorage();
+
             // Don't auto-load puzzles anymore - only when user clicks Puzzles tab
         }
 
@@ -710,6 +867,10 @@
                     // Fire off two-stage analysis and best moves (don't await)
                     getBestMoves(data.fen);
                     analyzePositionTwoStage(data.fen);
+
+                    // Save state after navigation (debounced to avoid too many saves)
+                    if (window.saveStateTimeout) clearTimeout(window.saveStateTimeout);
+                    window.saveStateTimeout = setTimeout(saveStateToStorage, 500);
                 }
             } catch (error) {
                 console.error('Error getting board:', error);
@@ -1142,6 +1303,9 @@
                         await analyzePositionTwoStage(fen);
                     }
                 }
+
+                // Save state after settings change
+                saveStateToStorage();
             } catch (error) {
                 console.error('Error updating settings:', error);
             }
@@ -1160,6 +1324,9 @@
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(settings)
                 });
+
+                // Save state after puzzle settings change
+                saveStateToStorage();
             } catch (error) {
                 console.error('Error updating puzzle settings:', error);
             }
@@ -1393,8 +1560,16 @@
                         downloadSection.style.display = 'block';
                     }
 
-                    // Auto-load the first puzzle
-                    goToPuzzle(0);
+                    // Auto-load the appropriate puzzle
+                    if (isRestoringState && window.restorePuzzleIndex !== undefined) {
+                        // Navigate to the saved puzzle index
+                        goToPuzzle(window.restorePuzzleIndex);
+                        isRestoringState = false;
+                        window.restorePuzzleIndex = undefined;
+                    } else {
+                        // Auto-load the first puzzle
+                        goToPuzzle(0);
+                    }
                 }
             }
         }
@@ -1546,6 +1721,9 @@
                     if (puzzle.best_moves && puzzle.best_moves.length > 0) {
                         window.currentPuzzleBestMove = puzzle.best_moves[0];
                     }
+
+                    // Save state after navigating to puzzle
+                    saveStateToStorage();
                 }
             } catch (error) {
                 console.error('Error going to puzzle:', error);

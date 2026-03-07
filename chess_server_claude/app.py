@@ -1168,7 +1168,7 @@ def settings():
 def load_sample():
     """Load sample.pgn file."""
     sample_path = os.path.join(
-        os.path.dirname(__file__), "..", "sample.pgn"
+        os.path.dirname(__file__), "sample.pgn"
     )
 
     if not os.path.exists(sample_path):
@@ -1191,6 +1191,77 @@ def load_sample():
         "session_id": session_id,
         "num_games": len(game_state.games),
     })
+
+
+@app.route("/restore_session", methods=["POST"])
+def restore_session():
+    """Restore session from saved PGN string (for browser storage persistence)."""
+    data = request.get_json()
+
+    if not data or "pgn_string" not in data:
+        return jsonify({"error": "No PGN string provided"}), 400
+
+    pgn_string = data["pgn_string"]
+
+    if not pgn_string or not pgn_string.strip():
+        return jsonify({"error": "Empty PGN string"}), 400
+
+    try:
+        # Create new game state from the PGN string
+        session_id = str(datetime.now().timestamp())
+        game_state = GameState(pgn_string)
+        games_db[session_id] = game_state
+
+        # Restore settings if provided
+        if "settings" in data:
+            settings = data["settings"]
+            if "show_evaluation" in settings:
+                game_state.settings["show_evaluation"] = settings["show_evaluation"]
+            if "show_best_moves" in settings:
+                game_state.settings["show_best_moves"] = settings["show_best_moves"]
+            if "num_best_moves" in settings:
+                game_state.settings["num_best_moves"] = int(settings["num_best_moves"])
+            if "time_limit" in settings:
+                game_state.settings["time_limit"] = float(settings["time_limit"])
+            if "puzzle_time_limit" in settings:
+                game_state.settings["puzzle_time_limit"] = float(settings["puzzle_time_limit"])
+
+        # Restore puzzle settings if provided
+        if "puzzle_settings" in data:
+            puzzle_settings = data["puzzle_settings"]
+            if "success_criterion" in puzzle_settings:
+                game_state.puzzle_settings["success_criterion"] = puzzle_settings["success_criterion"]
+            if "min_class" in puzzle_settings:
+                game_state.puzzle_settings["min_class"] = puzzle_settings["min_class"]
+            if "classification_mode" in puzzle_settings:
+                game_state.puzzle_settings["classification_mode"] = puzzle_settings["classification_mode"]
+
+        session["session_id"] = session_id
+
+        return jsonify({
+            "session_id": session_id,
+            "num_games": len(game_state.games),
+        })
+    except Exception as e:
+        return jsonify({"error": f"Failed to restore session: {e}"}), 400
+
+
+@app.route("/sample.pgn")
+def get_sample_pgn():
+    """Serve the sample.pgn file for browser storage."""
+    sample_path = os.path.join(
+        os.path.dirname(__file__), "sample.pgn"
+    )
+
+    if not os.path.exists(sample_path):
+        return jsonify({"error": "Sample file not found"}), 404
+
+    try:
+        with open(sample_path, "r") as f:
+            pgn_string = f.read()
+        return Response(pgn_string, mimetype="application/x-chess-pgn")
+    except Exception as e:
+        return jsonify({"error": f"Failed to read sample file: {e}"}), 400
 
 
 @app.route("/download_annotated_pgn")

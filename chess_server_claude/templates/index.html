@@ -214,6 +214,13 @@
                         <small class="text-muted d-block">Hide player names and event names</small>
                     </div>
                     <div class="form-check mb-2">
+                        <input type="checkbox" class="form-check-input" id="autoAdvancePuzzle">
+                        <label class="form-check-label" for="autoAdvancePuzzle">
+                            Auto-advance Puzzle
+                        </label>
+                        <small class="text-muted d-block">Advance to next puzzle after correct answer</small>
+                    </div>
+                    <div class="form-check mb-2">
                         <input type="checkbox" class="form-check-input" id="showEvaluation" checked>
                         <label class="form-check-label" for="showEvaluation">
                             Show Evaluation
@@ -397,6 +404,7 @@
         var puzzleMode = false;
         var anonymousMode = false;
         var hideMoveList = false;
+        var autoAdvancePuzzle = false;
 
         // Storage key for localStorage
         var STORAGE_KEY = 'chessPuzzleGeneratorState';
@@ -415,7 +423,8 @@
                         time_limit: parseFloat(document.getElementById('timeLimit').value),
                         puzzle_time_limit: parseFloat(document.getElementById('puzzleTimeLimit').value),
                         anonymous_mode: document.getElementById('anonymousMode').checked,
-                        hide_move_list: document.getElementById('hideMoveList').checked
+                        hide_move_list: document.getElementById('hideMoveList').checked,
+                        auto_advance_puzzle: document.getElementById('autoAdvancePuzzle').checked
                     },
                     puzzle_settings: {
                         puzzle_mode: puzzleMode,
@@ -500,6 +509,12 @@
                 if (state.settings.hide_move_list !== undefined) {
                     document.getElementById('hideMoveList').checked = state.settings.hide_move_list;
                     hideMoveList = state.settings.hide_move_list;
+                }
+
+                // Restore auto advance puzzle
+                if (state.settings.auto_advance_puzzle !== undefined) {
+                    document.getElementById('autoAdvancePuzzle').checked = state.settings.auto_advance_puzzle;
+                    autoAdvancePuzzle = state.settings.auto_advance_puzzle;
                 }
 
                 // Apply settings visibility
@@ -680,6 +695,10 @@
             anonymousMode = e.target.checked;
             updateGameListDisplay();
             rebuildPuzzleResults();
+            saveStateToStorage();
+        });
+        document.getElementById('autoAdvancePuzzle').addEventListener('change', function(e) {
+            autoAdvancePuzzle = e.target.checked;
             saveStateToStorage();
         });
         document.getElementById('hideMoveList').addEventListener('change', function(e) {
@@ -1965,7 +1984,7 @@
                         continuationDiv.textContent = formatContinuation(data.move_san, data.continuation);
                     }
 
-                    if (data.correct && data.next_puzzle !== null) {
+                    if (data.correct && data.next_puzzle !== null && autoAdvancePuzzle) {
                         setTimeout(() => {
                             goToPuzzle(data.next_puzzle);
                         }, 1500);

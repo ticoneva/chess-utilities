@@ -1297,16 +1297,22 @@
             let html = '<h6 class="mt-2">Top Moves</h6>';
             html += '<div class="list-group">';
 
-            bestMoves.forEach(function(move) {
+            bestMoves.forEach(function(move, moveIndex) {
                 const scoreClass = move.score > 0 ? 'text-dark' : 'text-muted';
                 const pvLine = move.pv ? move.pv.join(' ') : '';
+                const pvArray = move.pv ? JSON.stringify(move.pv) : '[]';
                 html += `
-                    <div class="list-group-item best-move" data-uci="${move.uci}" data-san="${move.san}" data-pv="${pvLine}">
-                        <div class="d-flex justify-content-between">
+                    <div class="list-group-item best-move" data-uci="${move.uci}" data-san="${move.san}" data-pv="${pvLine}" data-pv-array='${pvArray}' data-move-index="${moveIndex}">
+                        <div class="d-flex justify-content-between align-items-center">
                             <span><strong>${move.san}</strong></span>
                             <span class="${scoreClass}">${move.score > 0 ? '+' : ''}${move.score.toFixed(1)}</span>
                         </div>
-                        <div class="pv-line small text-muted mt-1" style="display: none;"></div>
+                        <div class="pv-section mt-1" style="display: none;">
+                            <div class="d-flex align-items-center gap-2">
+                                <button class="btn btn-sm btn-outline-secondary pv-play-btn" title="Play line">▶</button>
+                                <div class="pv-line small text-muted flex-grow-1"></div>
+                            </div>
+                        </div>
                     </div>
                 `;
             });
@@ -1316,16 +1322,26 @@
 
             // Add click handlers to show PV line
             container.querySelectorAll('.best-move').forEach(function(el) {
-                el.addEventListener('click', function() {
+                el.addEventListener('click', function(e) {
+                    // Don't toggle PV if clicking the play button
+                    if (e.target.classList.contains('pv-play-btn')) {
+                        return;
+                    }
+
+                    const pvSection = this.querySelector('.pv-section');
                     const pvDiv = this.querySelector('.pv-line');
                     const pvData = this.dataset.pv;
 
                     // Toggle PV line display
-                    if (pvDiv.style.display === 'none') {
+                    if (pvSection.style.display === 'none') {
                         pvDiv.textContent = pvData;
-                        pvDiv.style.display = 'block';
+                        pvSection.style.display = 'block';
                     } else {
-                        pvDiv.style.display = 'none';
+                        pvSection.style.display = 'none';
+                        // Reset play button if visible
+                        const playBtn = this.querySelector('.pv-play-btn');
+                        playBtn.textContent = '▶';
+                        playBtn.title = 'Play line';
                     }
 
                     // Also make the move on the board (if not in puzzle mode)
@@ -1338,7 +1354,73 @@
                         }
                     }
                 });
+
+                // Play button handler
+                const playBtn = el.querySelector('.pv-play-btn');
+                playBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const parent = this.closest('.best-move');
+                    const pvArray = JSON.parse(parent.dataset.pvArray);
+
+                    if (this.textContent === '▶') {
+                        // Play the line
+                        playPVLine(parent, pvArray, this);
+                    } else {
+                        // Restore the position
+                        restorePVPosition(parent, this);
+                    }
+                });
             });
+        }
+
+        // Store original position before playing PV
+        var pvOriginalFen = null;
+        var pvOriginalPly = null;
+        var pvPlayingElement = null;
+
+        function playPVLine(element, pvMoves, button) {
+            if (pvMoves.length === 0) return;
+
+            // Store original position
+            pvOriginalFen = game.fen();
+            pvOriginalPly = currentPly;
+            pvPlayingElement = element;
+
+            // Change button to restore
+            button.textContent = '↩';
+            button.title = 'Restore position';
+
+            // Play moves one at a time
+            let moveIndex = 0;
+            const playInterval = setInterval(() => {
+                if (moveIndex >= pvMoves.length) {
+                    clearInterval(playInterval);
+                    return;
+                }
+
+                const move = game.move(pvMoves[moveIndex]);
+                if (move) {
+                    board.position(game.fen());
+                    moveIndex++;
+                } else {
+                    clearInterval(playInterval);
+                }
+            }, 600); // 600ms between moves
+        }
+
+        function restorePVPosition(element, button) {
+            if (pvOriginalFen) {
+                game.load(pvOriginalFen);
+                board.position(pvOriginalFen);
+
+                // Reset button
+                button.textContent = '▶';
+                button.title = 'Play line';
+
+                pvOriginalFen = null;
+                pvOriginalPly = null;
+                pvPlayingElement = null;
+            }
         }
 
         function updateMoveList(moveList, currentPly, moveClassifications) {

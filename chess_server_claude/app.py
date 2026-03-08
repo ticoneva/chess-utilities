@@ -475,10 +475,22 @@ class GameState:
                 continue
             seen_moves.add(move_uci)
 
+            # Build the PV line in SAN notation
+            pv_san = []
+            temp_board = board.copy()
+            for pv_move in pv_info["pv"][:10]:  # Limit to 10 moves
+                try:
+                    san = temp_board.san(pv_move)
+                    pv_san.append(san)
+                    temp_board.push(pv_move)
+                except:
+                    break
+
             best_moves.append({
                 "san": move_san,
                 "uci": move_uci,
                 "score": cp / 100.0,
+                "pv": pv_san,
             })
 
         return best_moves
@@ -925,10 +937,22 @@ def _get_best_moves_for_limit(self, board: chess.Board, engine: Any, time_limit)
         if board.turn == chess.BLACK:
             cp = -cp
 
+        # Build the PV line in SAN notation
+        pv_san = []
+        temp_board = board.copy()
+        for pv_move in pv_info["pv"][:10]:  # Limit to 10 moves
+            try:
+                san = temp_board.san(pv_move)
+                pv_san.append(san)
+                temp_board.push(pv_move)
+            except:
+                break
+
         best_moves.append({
             "san": move_san,
             "uci": move_uci,
             "score": cp / 100.0,
+            "pv": pv_san,
         })
 
     return best_moves

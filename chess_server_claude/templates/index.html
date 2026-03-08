@@ -1299,12 +1299,14 @@
 
             bestMoves.forEach(function(move) {
                 const scoreClass = move.score > 0 ? 'text-dark' : 'text-muted';
+                const pvLine = move.pv ? move.pv.join(' ') : '';
                 html += `
-                    <div class="list-group-item best-move" data-uci="${move.uci}" data-san="${move.san}">
+                    <div class="list-group-item best-move" data-uci="${move.uci}" data-san="${move.san}" data-pv="${pvLine}">
                         <div class="d-flex justify-content-between">
                             <span><strong>${move.san}</strong></span>
                             <span class="${scoreClass}">${move.score > 0 ? '+' : ''}${move.score.toFixed(1)}</span>
                         </div>
+                        <div class="pv-line small text-muted mt-1" style="display: none;"></div>
                     </div>
                 `;
             });
@@ -1312,9 +1314,21 @@
             html += '</div>';
             container.innerHTML = html;
 
-            // Add click handlers to make moves
+            // Add click handlers to show PV line
             container.querySelectorAll('.best-move').forEach(function(el) {
                 el.addEventListener('click', function() {
+                    const pvDiv = this.querySelector('.pv-line');
+                    const pvData = this.dataset.pv;
+
+                    // Toggle PV line display
+                    if (pvDiv.style.display === 'none') {
+                        pvDiv.textContent = pvData;
+                        pvDiv.style.display = 'block';
+                    } else {
+                        pvDiv.style.display = 'none';
+                    }
+
+                    // Also make the move on the board (if not in puzzle mode)
                     if (!puzzleMode) {
                         const move = game.move({from: this.dataset.uci.substring(0,2), to: this.dataset.uci.substring(2)});
                         if (move) {

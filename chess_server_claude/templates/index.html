@@ -2118,7 +2118,20 @@
                     // Show continuation if available
                     if (data.continuation && data.continuation.length > 0) {
                         continuationDiv.style.display = 'block';
-                        continuationDiv.textContent = formatContinuation(data.move_san, data.continuation);
+                        continuationDiv.innerHTML = formatContinuationWithButton(data.move_san, data.continuation);
+                        // Add play button handler
+                        const playBtn = continuationDiv.querySelector('.continuation-play-btn');
+                        if (playBtn) {
+                            playBtn.addEventListener('click', function() {
+                                const moves = JSON.parse(this.dataset.continuation);
+                                const userMove = this.dataset.userMove;
+                                if (this.textContent === '▶') {
+                                    playContinuationLine(userMove, moves, this);
+                                } else {
+                                    restoreContinuationPosition(this);
+                                }
+                            });
+                        }
                     }
 
                     if (data.correct && data.next_puzzle !== null && autoAdvancePuzzle) {
@@ -2139,13 +2152,13 @@
             }
         }
 
-        function formatContinuation(userMove, continuation) {
+        function formatContinuationWithButton(userMove, continuation) {
             // Get current move number from the game
             const moveNumber = Math.ceil((currentPly + 1) / 2);
             const isWhiteToMove = currentPly % 2 === 0;
 
             // Format: "12. ..Ne7 13. Qe2 Qe7 14. ..."
-            let result = isWhiteToMove ? `${moveNumber}. ${userMove}` : `${moveNumber}... ${userMove}`;
+            let textPart = isWhiteToMove ? `${moveNumber}. ${userMove}` : `${moveNumber}... ${userMove}`;
 
             // Add continuation moves
             let turn = !isWhiteToMove; // After user's move, it's opponent's turn
@@ -2154,14 +2167,95 @@
             for (let i = 0; i < continuation.length; i++) {
                 if (turn) {
                     num++;
-                    result += ` ${num}. ${continuation[i]}`;
+                    textPart += ` ${num}. ${continuation[i]}`;
                 } else {
-                    result += ` ${continuation[i]}`;
+                    textPart += ` ${continuation[i]}`;
                 }
                 turn = !turn;
             }
 
-            return result;
+            const continuationJson = JSON.stringify(continuation);
+            return `
+                <div class="d-flex align-items-center gap-2">
+                    <button class="btn btn-sm btn-outline-secondary continuation-play-btn" data-user-move="${userMove}" data-continuation='${continuationJson}' title="Play line">▶</button>
+                    <span class="flex-grow-1">${textPart}</span>
+                </div>
+            `;
+        }
+
+        // Store original position for continuation playback
+        var continuationOriginalFen = null;
+        var continuationOriginalEval = null;
+        var continuationPlayInterval = null;
+        var continuationPlayButton = null;
+
+        function playContinuationLine(userMove, continuation, button) {
+            // Store original position
+            continuationOriginalFen = game.fen();
+            continuationOriginalEval = parseFloat(document.getElementById('evalScore').textContent);
+            continuationPlayButton = button;
+
+            // Change button to restore
+            button.textContent = '↩';
+            button.title = 'Restore position';
+
+            // Build all moves (user move + continuation)
+            const allMoves = [userMove, ...continuation];
+
+            // Play moves one at a time
+            let moveIndex = 0;
+            continuationPlayInterval = setInterval(async () => {
+                if (moveIndex >= allMoves.length) {
+                    clearInterval(continuationPlayInterval);
+                    continuationPlayInterval = null;
+                    return;
+                }
+
+                const move = game.move(allMoves[moveIndex]);
+                if (move) {
+                    board.position(game.fen());
+                    moveIndex++;
+
+                    // Update evaluation after each move
+                    try {
+                        const fen = game.fen();
+                        const response = await fetch(`analyze_quick?fen=${encodeURIComponent(fen)}`);
+                        const data = await response.json();
+                        if (data.evaluation !== undefined && !data.disabled) {
+                            updateEvaluation(data.evaluation);
+                        }
+                    } catch (e) {
+                        console.error('Error fetching evaluation during continuation play:', e);
+                    }
+                } else {
+                    clearInterval(continuationPlayInterval);
+                    continuationPlayInterval = null;
+                }
+            }, 600);
+        }
+
+        function restoreContinuationPosition(button) {
+            if (continuationOriginalFen) {
+                game.load(continuationOriginalFen);
+                board.position(continuationOriginalFen);
+
+                // Restore original evaluation
+                if (continuationOriginalEval !== null) {
+                    updateEvaluation(continuationOriginalEval);
+                }
+
+                // Reset button
+                button.textContent = '▶';
+                button.title = 'Play line';
+
+                continuationOriginalFen = null;
+                continuationOriginalEval = null;
+                continuationPlayButton = null;
+                if (continuationPlayInterval) {
+                    clearInterval(continuationPlayInterval);
+                    continuationPlayInterval = null;
+                }
+            }
         }
 
         // Hide evaluation initially

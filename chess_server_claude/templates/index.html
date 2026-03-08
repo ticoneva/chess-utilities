@@ -2125,10 +2125,11 @@
                             playBtn.addEventListener('click', function() {
                                 const moves = JSON.parse(this.dataset.continuation);
                                 const userMove = this.dataset.userMove;
+                                const isCorrect = data.correct;
                                 if (this.textContent === '▶') {
-                                    playContinuationLine(userMove, moves, this);
+                                    playContinuationLine(userMove, moves, this, isCorrect);
                                 } else {
-                                    restoreContinuationPosition(this);
+                                    restoreContinuationPosition(this, isCorrect);
                                 }
                             });
                         }
@@ -2188,30 +2189,34 @@
         var continuationOriginalEval = null;
         var continuationPlayInterval = null;
         var continuationPlayButton = null;
+        var continuationWasCorrect = null;
 
-        function playContinuationLine(userMove, continuation, button) {
+        function playContinuationLine(userMove, continuation, button, isCorrect) {
             // Store original position
             continuationOriginalFen = game.fen();
             continuationOriginalEval = parseFloat(document.getElementById('evalScore').textContent);
             continuationPlayButton = button;
+            continuationWasCorrect = isCorrect;
 
             // Change button to restore
             button.textContent = '↩';
             button.title = 'Restore position';
 
-            // Build all moves (user move + continuation)
-            const allMoves = [userMove, ...continuation];
+            // Build moves to play
+            // If correct, user's move is already on the board, so only play continuation
+            // If incorrect, board was snapped back, so play user move + continuation
+            let movesToPlay = isCorrect ? continuation : [userMove, ...continuation];
 
             // Play moves one at a time
             let moveIndex = 0;
             continuationPlayInterval = setInterval(async () => {
-                if (moveIndex >= allMoves.length) {
+                if (moveIndex >= movesToPlay.length) {
                     clearInterval(continuationPlayInterval);
                     continuationPlayInterval = null;
                     return;
                 }
 
-                const move = game.move(allMoves[moveIndex]);
+                const move = game.move(movesToPlay[moveIndex]);
                 if (move) {
                     board.position(game.fen());
                     moveIndex++;
@@ -2234,7 +2239,7 @@
             }, 600);
         }
 
-        function restoreContinuationPosition(button) {
+        function restoreContinuationPosition(button, isCorrect) {
             if (continuationOriginalFen) {
                 game.load(continuationOriginalFen);
                 board.position(continuationOriginalFen);
@@ -2251,6 +2256,7 @@
                 continuationOriginalFen = null;
                 continuationOriginalEval = null;
                 continuationPlayButton = null;
+                continuationWasCorrect = null;
                 if (continuationPlayInterval) {
                     clearInterval(continuationPlayInterval);
                     continuationPlayInterval = null;

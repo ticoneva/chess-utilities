@@ -1360,6 +1360,7 @@
         // Store original position before playing PV
         var pvOriginalFen = null;
         var pvOriginalPly = null;
+        var pvOriginalEval = null;
         var pvPlayingElement = null;
         var pvPlayingButton = null;
         var pvPlayInterval = null;
@@ -1372,6 +1373,10 @@
                 // Restore the previous position without animation
                 game.load(pvOriginalFen);
                 board.position(pvOriginalFen);
+                // Restore the previous evaluation
+                if (pvOriginalEval !== null) {
+                    updateEvaluation(pvOriginalEval);
+                }
                 // Reset the previous button
                 if (pvPlayingButton) {
                     pvPlayingButton.textContent = '▶';
@@ -1390,9 +1395,10 @@
                 return;
             }
 
-            // Store original position
+            // Store original position and evaluation
             pvOriginalFen = game.fen();
             pvOriginalPly = currentPly;
+            pvOriginalEval = parseFloat(document.getElementById('evalScore').textContent);
             pvPlayingElement = element;
             pvPlayingButton = button;
 
@@ -1402,7 +1408,7 @@
 
             // Play moves one at a time
             let moveIndex = 0;
-            pvPlayInterval = setInterval(() => {
+            pvPlayInterval = setInterval(async () => {
                 if (moveIndex >= pvMoves.length) {
                     clearInterval(pvPlayInterval);
                     pvPlayInterval = null;
@@ -1413,6 +1419,18 @@
                 if (move) {
                     board.position(game.fen());
                     moveIndex++;
+
+                    // Update evaluation after each move
+                    try {
+                        const fen = game.fen();
+                        const response = await fetch(`analyze_quick?fen=${encodeURIComponent(fen)}`);
+                        const data = await response.json();
+                        if (data.evaluation !== undefined && !data.disabled) {
+                            updateEvaluation(data.evaluation);
+                        }
+                    } catch (e) {
+                        console.error('Error fetching evaluation during PV play:', e);
+                    }
                 } else {
                     clearInterval(pvPlayInterval);
                     pvPlayInterval = null;
@@ -1425,12 +1443,18 @@
                 game.load(pvOriginalFen);
                 board.position(pvOriginalFen);
 
+                // Restore original evaluation
+                if (pvOriginalEval !== null) {
+                    updateEvaluation(pvOriginalEval);
+                }
+
                 // Reset button
                 button.textContent = '▶';
                 button.title = 'Play line';
 
                 pvOriginalFen = null;
                 pvOriginalPly = null;
+                pvOriginalEval = null;
                 pvPlayingElement = null;
                 pvPlayingButton = null;
                 if (pvPlayInterval) {

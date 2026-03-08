@@ -1302,15 +1302,15 @@
                 const pvLine = move.pv ? move.pv.join(' ') : '';
                 const pvArray = move.pv ? JSON.stringify(move.pv) : '[]';
                 html += `
-                    <div class="list-group-item best-move" data-uci="${move.uci}" data-san="${move.san}" data-pv="${pvLine}" data-pv-array='${pvArray}' data-move-index="${moveIndex}">
+                    <div class="list-group-item best-move" data-uci="${move.uci}" data-san="${move.san}" data-pv-array='${pvArray}' data-move-index="${moveIndex}">
                         <div class="d-flex justify-content-between align-items-center">
                             <span><strong>${move.san}</strong></span>
                             <span class="${scoreClass}">${move.score > 0 ? '+' : ''}${move.score.toFixed(1)}</span>
                         </div>
-                        <div class="pv-section mt-1" style="display: none;">
+                        <div class="pv-section mt-1">
                             <div class="d-flex align-items-center gap-2">
                                 <button class="btn btn-sm btn-outline-secondary pv-play-btn" title="Play line">▶</button>
-                                <div class="pv-line small text-muted flex-grow-1"></div>
+                                <div class="pv-line small text-muted flex-grow-1">${pvLine}</div>
                             </div>
                         </div>
                     </div>
@@ -1320,31 +1320,15 @@
             html += '</div>';
             container.innerHTML = html;
 
-            // Add click handlers to show PV line
+            // Add click handler to make the move on the board
             container.querySelectorAll('.best-move').forEach(function(el) {
                 el.addEventListener('click', function(e) {
-                    // Don't toggle PV if clicking the play button
+                    // Don't trigger move if clicking the play button
                     if (e.target.classList.contains('pv-play-btn')) {
                         return;
                     }
 
-                    const pvSection = this.querySelector('.pv-section');
-                    const pvDiv = this.querySelector('.pv-line');
-                    const pvData = this.dataset.pv;
-
-                    // Toggle PV line display
-                    if (pvSection.style.display === 'none') {
-                        pvDiv.textContent = pvData;
-                        pvSection.style.display = 'block';
-                    } else {
-                        pvSection.style.display = 'none';
-                        // Reset play button if visible
-                        const playBtn = this.querySelector('.pv-play-btn');
-                        playBtn.textContent = '▶';
-                        playBtn.title = 'Play line';
-                    }
-
-                    // Also make the move on the board (if not in puzzle mode)
+                    // Make the move on the board (if not in puzzle mode)
                     if (!puzzleMode) {
                         const move = game.move({from: this.dataset.uci.substring(0,2), to: this.dataset.uci.substring(2)});
                         if (move) {

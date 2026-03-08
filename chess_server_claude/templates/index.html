@@ -1361,14 +1361,40 @@
         var pvOriginalFen = null;
         var pvOriginalPly = null;
         var pvPlayingElement = null;
+        var pvPlayingButton = null;
+        var pvPlayInterval = null;
 
         function playPVLine(element, pvMoves, button) {
             if (pvMoves.length === 0) return;
+
+            // If another line is currently playing, restore it first
+            if (pvOriginalFen && pvPlayingButton && pvPlayingButton !== button) {
+                // Restore the previous position without animation
+                game.load(pvOriginalFen);
+                board.position(pvOriginalFen);
+                // Reset the previous button
+                if (pvPlayingButton) {
+                    pvPlayingButton.textContent = '▶';
+                    pvPlayingButton.title = 'Play line';
+                }
+                // Clear any running interval
+                if (pvPlayInterval) {
+                    clearInterval(pvPlayInterval);
+                    pvPlayInterval = null;
+                }
+            }
+
+            // If clicking the same button that's already playing, just restore
+            if (pvPlayingButton === button && pvOriginalFen) {
+                restorePVPosition(element, button);
+                return;
+            }
 
             // Store original position
             pvOriginalFen = game.fen();
             pvOriginalPly = currentPly;
             pvPlayingElement = element;
+            pvPlayingButton = button;
 
             // Change button to restore
             button.textContent = '↩';
@@ -1376,9 +1402,10 @@
 
             // Play moves one at a time
             let moveIndex = 0;
-            const playInterval = setInterval(() => {
+            pvPlayInterval = setInterval(() => {
                 if (moveIndex >= pvMoves.length) {
-                    clearInterval(playInterval);
+                    clearInterval(pvPlayInterval);
+                    pvPlayInterval = null;
                     return;
                 }
 
@@ -1387,7 +1414,8 @@
                     board.position(game.fen());
                     moveIndex++;
                 } else {
-                    clearInterval(playInterval);
+                    clearInterval(pvPlayInterval);
+                    pvPlayInterval = null;
                 }
             }, 600); // 600ms between moves
         }
@@ -1404,6 +1432,11 @@
                 pvOriginalFen = null;
                 pvOriginalPly = null;
                 pvPlayingElement = null;
+                pvPlayingButton = null;
+                if (pvPlayInterval) {
+                    clearInterval(pvPlayInterval);
+                    pvPlayInterval = null;
+                }
             }
         }
 

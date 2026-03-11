@@ -800,6 +800,14 @@ def board():
 
     game_state = games_db[session_id]
     ply = int(request.args.get("ply", 0))
+    game_index = request.args.get("game")
+
+    # Switch to specified game if provided
+    if game_index is not None:
+        game_index = int(game_index)
+        if game_index != game_state.current_game_index:
+            game_state.current_game_index = game_index
+            game_state._load_current_game()
 
     # Ensure game is loaded
     if not hasattr(game_state, 'moves') or game_state.moves is None:
@@ -812,8 +820,8 @@ def board():
     fen = game_state.get_fen_at_ply(ply)
 
     # Get puzzles for current game for move classification
-    game_index = game_state.current_game_index
-    puzzles = game_state._game_puzzles.get(game_index, [])
+    game_idx = game_state.current_game_index
+    puzzles = game_state._game_puzzles.get(game_idx, [])
     # Create a map from ply to classification
     ply_classifications = {}
     for p in puzzles:

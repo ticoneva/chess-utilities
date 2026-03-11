@@ -1890,7 +1890,6 @@
             // Reset puzzle array when rebuilding - this ensures correct indices
             window.allPuzzles = [];
 
-            let totalPuzzles = 0;
             let filteredPuzzles = 0;
             let html = '<div class="list-group">';
 
@@ -1899,21 +1898,34 @@
             sortedGames.forEach(function(gameIdx) {
                 const gameData = window.gamesWithPuzzles[gameIdx];
                 const puzzles = gameData.puzzles;
-                totalPuzzles += puzzles.length;
 
                 // Get player names from the game
                 const gameName = gameData.game_name || '';
-                const players = gameName.split(' vs ');
-                const whitePlayer = players[0] || '';
-                const blackPlayer = players[1] ? players[1].split(' (')[0] : '';
+                const vsIndex = gameName.indexOf(' vs ');
+                const whitePlayer = vsIndex > 0 ? gameName.substring(0, vsIndex).trim() : '';
+                const blackPlayer = vsIndex > 0 ? gameName.substring(vsIndex + 4).trim() : '';
 
                 // Check if we should show puzzles from this game based on player filter
                 // If no players selected, show all
                 // If player selected, only show puzzles where that player made the blunder/mistake/inaccuracy
-                let showWhitePuzzles = selectedPlayers.size === 0 || selectedPlayers.has(whitePlayer);
-                let showBlackPuzzles = selectedPlayers.size === 0 || selectedPlayers.has(blackPlayer);
+                const showWhitePuzzles = selectedPlayers.size === 0 || selectedPlayers.has(whitePlayer);
+                const showBlackPuzzles = selectedPlayers.size === 0 || selectedPlayers.has(blackPlayer);
 
-                if (!showWhitePuzzles && !showBlackPuzzles) return; // Skip this game entirely
+                // Collect puzzles that pass the filter
+                const gamePuzzles = [];
+                puzzles.forEach(function(p) {
+                    // Check if this puzzle should be shown based on who made the move
+                    // Even ply = white's move, odd ply = black's move
+                    const isWhiteMove = p.ply % 2 === 0;
+                    if (isWhiteMove && showWhitePuzzles) {
+                        gamePuzzles.push({puzzle: p, isWhiteMove: isWhiteMove});
+                    } else if (!isWhiteMove && showBlackPuzzles) {
+                        gamePuzzles.push({puzzle: p, isWhiteMove: isWhiteMove});
+                    }
+                });
+
+                // Skip this game if no puzzles pass the filter
+                if (gamePuzzles.length === 0) return;
 
                 // Game header - use anonymous name if enabled
                 const gameHeader = anonymousMode ? `Game ${parseInt(gameIdx) + 1}` : `${gameData.game_name} (Game ${parseInt(gameIdx) + 1})`;
@@ -1921,13 +1933,10 @@
                     ${gameHeader}
                 </div>`;
 
-                // Puzzles for this game
-                puzzles.forEach(function(p) {
-                    // Check if this puzzle should be shown based on who made the move
-                    // Even ply = white's move, odd ply = black's move
-                    const isWhiteMove = p.ply % 2 === 0;
-                    if (isWhiteMove && !showWhitePuzzles) return;
-                    if (!isWhiteMove && !showBlackPuzzles) return;
+                // Add puzzles that passed the filter
+                gamePuzzles.forEach(function(item) {
+                    const p = item.puzzle;
+                    const isWhiteMove = item.isWhiteMove;
 
                     var puzzleIndex = window.allPuzzles.length;
                     window.allPuzzles.push(p);
@@ -1956,7 +1965,7 @@
                                minClass === 'mistake' ? 'Mistakes+' : 'Inaccuracies+';
 
                 resultsDiv.innerHTML = `<div class="alert alert-info py-1 small mb-2">
-                    Found ${filteredPuzzles} ${classLabel}${selectedPlayers.size > 0 ? ' (filtered)' : ''}...
+                    Found ${filteredPuzzles} ${classLabel}${selectedPlayers.size > 0 ? ' (filtered)' : ''}
                 </div>` + html;
 
                 // Add click handlers to new elements
@@ -2154,13 +2163,20 @@
                 // Store current puzzle index for navigation
                 window.currentPuzzleIndex = puzzleIndex;
 
-                const response = await fetch(`goto_puzzle?puzzle=${puzzleIndex}`);
+                // Get the puzzle from our filtered list
+                const puzzle = window.allPuzzles[puzzleIndex];
+                if (!puzzle) {
+                    console.error('Invalid puzzle index:', puzzleIndex);
+                    return;
+                }
+
+                const gameIndex = puzzle.game_index;
+                const ply = puzzle.ply;
+
+                // Get the position directly using game_index and ply
+                const response = await fetch(`board?ply=${ply}&game=${gameIndex}`);
                 const data = await response.json();
                 if (response.ok) {
-                    const puzzle = data.puzzle;
-                    const gameIndex = puzzle.game_index || 0;
-                    const ply = puzzle.ply || 0;
-
                     document.getElementById('gameTitle').textContent =
                         `Puzzle ${puzzleIndex + 1}: Find the best move!`;
                     document.getElementById('puzzleMessage').style.display = 'block';
@@ -2180,6 +2196,10 @@
 
                     // Load game moves for the move list
                     loadGameForPuzzle(gameIndex, ply);
+
+                    // Store the puzzle's best moves for checking answers
+                    window.currentPuzzleBestMove = puzzle.best_moves ? puzzle.best_moves[0] : null;
+                    window.currentPuzzleBestMoves = puzzle.best_moves || [];
 
                     // Highlight puzzle in list
                     document.querySelectorAll('.puzzle-item').forEach(function(el) {

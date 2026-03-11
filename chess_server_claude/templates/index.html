@@ -206,6 +206,22 @@
                 <!-- Settings Panel -->
                 <div class="mb-4" id="settingsPanel" style="display: none;">
                     <h5>Settings</h5>
+                    <div class="mb-2">
+                        <button class="btn btn-outline-secondary btn-sm w-100 d-flex justify-content-between align-items-center" type="button" data-bs-toggle="collapse" data-bs-target="#playerFilterCollapse">
+                            <span>Filter by Player</span>
+                            <span>▼</span>
+                        </button>
+                        <div class="collapse mt-2" id="playerFilterCollapse">
+                            <div class="card card-body p-2" style="max-height: 200px; overflow-y: auto;">
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input" id="selectAllPlayers" checked>
+                                    <label class="form-check-label" for="selectAllPlayers"><strong>Select All</strong></label>
+                                </div>
+                                <hr class="my-1">
+                                <div id="playerCheckboxes"></div>
+                            </div>
+                        </div>
+                    </div>
                     <div class="form-check mb-2">
                         <input type="checkbox" class="form-check-input" id="anonymousMode">
                         <label class="form-check-label" for="anonymousMode">
@@ -405,6 +421,7 @@
         var anonymousMode = false;
         var hideMoveList = false;
         var autoAdvancePuzzle = false;
+        var selectedPlayers = new Set(); // Set of selected player names for filtering
 
         // Storage key for localStorage
         var STORAGE_KEY = 'chessPuzzleGeneratorState';
@@ -424,7 +441,8 @@
                         puzzle_time_limit: parseFloat(document.getElementById('puzzleTimeLimit').value),
                         anonymous_mode: document.getElementById('anonymousMode').checked,
                         hide_move_list: document.getElementById('hideMoveList').checked,
-                        auto_advance_puzzle: document.getElementById('autoAdvancePuzzle').checked
+                        auto_advance_puzzle: document.getElementById('autoAdvancePuzzle').checked,
+                        selected_players: Array.from(selectedPlayers)
                     },
                     puzzle_settings: {
                         puzzle_mode: puzzleMode,
@@ -515,6 +533,11 @@
                 if (state.settings.auto_advance_puzzle !== undefined) {
                     document.getElementById('autoAdvancePuzzle').checked = state.settings.auto_advance_puzzle;
                     autoAdvancePuzzle = state.settings.auto_advance_puzzle;
+                }
+
+                // Restore selected players
+                if (state.settings.selected_players !== undefined && Array.isArray(state.settings.selected_players)) {
+                    selectedPlayers = new Set(state.settings.selected_players);
                 }
 
                 // Apply settings visibility
@@ -848,6 +871,16 @@
                 // Sort by gameIndex to ensure order, filter out failed fetches
                 const sortedResults = results.filter(r => r !== null).sort((a, b) => a.gameIndex - b.gameIndex);
 
+                // Collect all unique player names
+                const allPlayers = new Set();
+                sortedResults.forEach(result => {
+                    if (result.data.headers.white) allPlayers.add(result.data.headers.white);
+                    if (result.data.headers.black) allPlayers.add(result.data.headers.black);
+                });
+
+                // Update player filter checkboxes
+                updatePlayerCheckboxes(allPlayers);
+
                 // Add games to DOM in order
                 sortedResults.forEach(result => {
                     addGameToList(result.gameIndex, result.data);
@@ -857,6 +890,73 @@
                 // via goToPuzzle which sets puzzleMode correctly
             });
         }
+
+        function updatePlayerCheckboxes(players) {
+            const container = document.getElementById('playerCheckboxes');
+            container.innerHTML = '';
+
+            // Sort players alphabetically
+            const sortedPlayers = Array.from(players).sort();
+
+            sortedPlayers.forEach(player => {
+                const div = document.createElement('div');
+                div.className = 'form-check';
+                const playerId = `player-${player.replace(/[^a-zA-Z0-9]/g, '_')}`;
+                const isChecked = selectedPlayers.has(player) || selectedPlayers.size === 0;
+
+                div.innerHTML = `
+                    <input type="checkbox" class="form-check-input player-filter-cb" id="${playerId}" data-player="${player}" ${isChecked ? 'checked' : ''}>
+                    <label class="form-check-label" for="${playerId}">${player}</label>
+                `;
+                container.appendChild(div);
+            });
+
+            // If no players were selected before, select all
+            if (selectedPlayers.size === 0) {
+                sortedPlayers.forEach(p => selectedPlayers.add(p));
+            }
+
+            // Add event listeners to checkboxes
+            container.querySelectorAll('.player-filter-cb').forEach(cb => {
+                cb.addEventListener('change', function() {
+                    if (this.checked) {
+                        selectedPlayers.add(this.dataset.player);
+                    } else {
+                        selectedPlayers.delete(this.dataset.player);
+                    }
+                    updateSelectAllState();
+                    rebuildPuzzleResults();
+                    saveStateToStorage();
+                });
+            });
+
+            updateSelectAllState();
+        }
+
+        function updateSelectAllState() {
+            const selectAllCb = document.getElementById('selectAllPlayers');
+            const playerCbs = document.querySelectorAll('.player-filter-cb');
+            const allChecked = Array.from(playerCbs).every(cb => cb.checked);
+            const someChecked = Array.from(playerCbs).some(cb => cb.checked);
+
+            selectAllCb.checked = allChecked;
+            selectAllCb.indeterminate = someChecked && !allChecked;
+        }
+
+        // Select All checkbox handler
+        document.getElementById('selectAllPlayers').addEventListener('change', function() {
+            const playerCbs = document.querySelectorAll('.player-filter-cb');
+            playerCbs.forEach(cb => {
+                cb.checked = this.checked;
+                if (this.checked) {
+                    selectedPlayers.add(cb.dataset.player);
+                } else {
+                    selectedPlayers.delete(cb.dataset.player);
+                }
+            });
+            rebuildPuzzleResults();
+            saveStateToStorage();
+        });
 
         function addGameToList(gameIndex, data) {
             const gamesList = document.getElementById('gamesList');
@@ -1791,6 +1891,7 @@
             window.allPuzzles = [];
 
             let totalPuzzles = 0;
+            let filteredPuzzles = 0;
             let html = '<div class="list-group">';
 
             const sortedGames = Object.keys(window.gamesWithPuzzles).sort((a, b) => parseInt(a) - parseInt(b));
@@ -1799,6 +1900,18 @@
                 const gameData = window.gamesWithPuzzles[gameIdx];
                 const puzzles = gameData.puzzles;
                 totalPuzzles += puzzles.length;
+
+                // Check if this game has any selected players
+                const gameName = gameData.game_name || '';
+                const players = gameName.split(' vs ');
+                const whitePlayer = players[0] || '';
+                const blackPlayer = players[1] ? players[1].split(' (')[0] : '';
+
+                const hasSelectedPlayer = selectedPlayers.size === 0 ||
+                    selectedPlayers.has(whitePlayer) ||
+                    selectedPlayers.has(blackPlayer);
+
+                if (!hasSelectedPlayer) return; // Skip this game
 
                 // Game header - use anonymous name if enabled
                 const gameHeader = anonymousMode ? `Game ${parseInt(gameIdx) + 1}` : `${gameData.game_name} (Game ${parseInt(gameIdx) + 1})`;
@@ -1810,9 +1923,10 @@
                 puzzles.forEach(function(p) {
                     var puzzleIndex = window.allPuzzles.length;
                     window.allPuzzles.push(p);
+                    filteredPuzzles++;
 
                     // Hide player name in anonymous mode
-                    const playerInfo = anonymousMode ? '' : ` • ${gameData.game_name.split(' vs ')[0]}`;
+                    const playerInfo = anonymousMode ? '' : ` • ${whitePlayer}`;
 
                     html += `
                         <div class="list-group-item puzzle-item ${p.classification}" data-puzzle="${puzzleIndex}">
@@ -1828,13 +1942,13 @@
 
             html += '</div>';
 
-            if (totalPuzzles > 0) {
+            if (filteredPuzzles > 0) {
                 const minClass = document.getElementById('minClass').value;
                 let classLabel = minClass === 'blunder' ? 'Blunders Only' :
                                minClass === 'mistake' ? 'Mistakes+' : 'Inaccuracies+';
 
                 resultsDiv.innerHTML = `<div class="alert alert-info py-1 small mb-2">
-                    Found ${totalPuzzles} ${classLabel} so far...
+                    Found ${filteredPuzzles} ${classLabel}${selectedPlayers.size > 0 ? ' (filtered)' : ''}...
                 </div>` + html;
 
                 // Add click handlers to new elements

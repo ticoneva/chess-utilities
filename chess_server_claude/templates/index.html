@@ -743,7 +743,7 @@
             loadPuzzles();
         });
         document.getElementById('successCriterion').addEventListener('change', updatePuzzleSettings);
-        document.getElementById('showAnswer').addEventListener('click', function() {
+        document.getElementById('showAnswer').addEventListener('click', async function() {
             if (window.currentPuzzleBestMove) {
                 const resultDiv = document.getElementById('puzzleResult');
                 resultDiv.style.display = 'block';
@@ -759,6 +759,41 @@
                         game.undo();
                         board.position(game.fen());
                     }, 2000);
+                }
+            } else {
+                // Fetch best moves if not available (e.g., from annotations)
+                const resultDiv = document.getElementById('puzzleResult');
+                resultDiv.style.display = 'block';
+                resultDiv.textContent = 'Analyzing...';
+                resultDiv.className = 'result-message';
+
+                try {
+                    const fen = game.fen();
+                    const response = await fetch(`analyze?fen=${encodeURIComponent(fen)}`);
+                    const data = await response.json();
+
+                    if (data.best_moves && data.best_moves.length > 0) {
+                        window.currentPuzzleBestMove = data.best_moves[0];
+                        window.currentPuzzleBestMoves = data.best_moves;
+
+                        resultDiv.textContent = `Best move: ${window.currentPuzzleBestMove.san}`;
+
+                        // Make the move on the board to show it
+                        const move = game.move(window.currentPuzzleBestMove.san);
+                        if (move) {
+                            board.position(game.fen());
+                            // Undo after a moment so user can try again
+                            setTimeout(() => {
+                                game.undo();
+                                board.position(game.fen());
+                            }, 2000);
+                        }
+                    } else {
+                        resultDiv.textContent = 'No best move found';
+                    }
+                } catch (error) {
+                    console.error('Error fetching best moves:', error);
+                    resultDiv.textContent = 'Error analyzing position';
                 }
             }
         });

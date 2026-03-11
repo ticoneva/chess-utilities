@@ -1901,17 +1901,19 @@
                 const puzzles = gameData.puzzles;
                 totalPuzzles += puzzles.length;
 
-                // Check if this game has any selected players
+                // Get player names from the game
                 const gameName = gameData.game_name || '';
                 const players = gameName.split(' vs ');
                 const whitePlayer = players[0] || '';
                 const blackPlayer = players[1] ? players[1].split(' (')[0] : '';
 
-                const hasSelectedPlayer = selectedPlayers.size === 0 ||
-                    selectedPlayers.has(whitePlayer) ||
-                    selectedPlayers.has(blackPlayer);
+                // Check if we should show puzzles from this game based on player filter
+                // If no players selected, show all
+                // If player selected, only show puzzles where that player made the blunder/mistake/inaccuracy
+                let showWhitePuzzles = selectedPlayers.size === 0 || selectedPlayers.has(whitePlayer);
+                let showBlackPuzzles = selectedPlayers.size === 0 || selectedPlayers.has(blackPlayer);
 
-                if (!hasSelectedPlayer) return; // Skip this game
+                if (!showWhitePuzzles && !showBlackPuzzles) return; // Skip this game entirely
 
                 // Game header - use anonymous name if enabled
                 const gameHeader = anonymousMode ? `Game ${parseInt(gameIdx) + 1}` : `${gameData.game_name} (Game ${parseInt(gameIdx) + 1})`;
@@ -1921,12 +1923,18 @@
 
                 // Puzzles for this game
                 puzzles.forEach(function(p) {
+                    // Check if this puzzle should be shown based on who made the move
+                    // Even ply = white's move, odd ply = black's move
+                    const isWhiteMove = p.ply % 2 === 0;
+                    if (isWhiteMove && !showWhitePuzzles) return;
+                    if (!isWhiteMove && !showBlackPuzzles) return;
+
                     var puzzleIndex = window.allPuzzles.length;
                     window.allPuzzles.push(p);
                     filteredPuzzles++;
 
                     // Hide player name in anonymous mode
-                    const playerInfo = anonymousMode ? '' : ` • ${whitePlayer}`;
+                    const playerInfo = anonymousMode ? '' : ` • ${isWhiteMove ? whitePlayer : blackPlayer}`;
 
                     html += `
                         <div class="list-group-item puzzle-item ${p.classification}" data-puzzle="${puzzleIndex}">

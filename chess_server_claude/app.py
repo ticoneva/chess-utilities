@@ -681,13 +681,11 @@ class GameState:
             else:  # Black moved
                 eval_change = after_eval - before_eval
 
-            # Check success criteria
-            correct = False
-            message = ""
-
+            # Determine move quality (independent of success criterion)
             move_found = False
             move_score = None
             move_rank = None
+            move_quality = None  # "best", "top3", "good", or None
 
             for i, mv in enumerate(best_moves_info):
                 if mv["uci"] == move_uci:
@@ -696,30 +694,32 @@ class GameState:
                     move_rank = i + 1
                     break
 
+            # Determine move quality based on rank and eval change
+            is_good_move = eval_change < INACCURACY_THRESHOLD / 100.0
+
+            if move_found and move_rank == 1:
+                move_quality = "best"
+            elif move_found and move_rank <= 3 and is_good_move:
+                move_quality = "top3"
+            elif is_good_move:
+                move_quality = "good"
+
+            # Check success criterion for advancing (separate from display)
+            correct = False
+
             if criterium == "best":
-                if move_found and move_rank == 1:
+                if move_quality == "best":
                     correct = True
-                    message = f"Correct! {move_san} is the best move."
-                else:
-                    message = f"{move_san} is not the best move. Try again."
-
             elif criterium == "top3":
-                if move_found and move_rank <= 3:
+                if move_quality in ("best", "top3"):
                     correct = True
-                    message = f"Correct! {move_san} is a good move (rank {move_rank})."
-                else:
-                    message = f"{move_san} is not among the top 3 moves. Try again."
-
             else:  # any (any good move)
-                if eval_change < INACCURACY_THRESHOLD / 100.0:
+                if move_quality in ("best", "top3", "good"):
                     correct = True
-                    message = f"Correct! {move_san} is a good move."
-                else:
-                    message = f"{move_san} is an inaccuracy or worse. Try again."
 
         return {
             "correct": correct,
-            "message": message,
+            "move_quality": move_quality,
             "move_san": move_san,
             "move_rank": move_rank,
             "move_score": move_score,

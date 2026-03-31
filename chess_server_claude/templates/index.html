@@ -154,6 +154,14 @@
             background-color: #d4edda;
             color: #155724;
         }
+        .top3 {
+            background-color: #c8e6c9;
+            color: #2e7d32;
+        }
+        .good-move {
+            background-color: #fff9c4;
+            color: #827717;
+        }
         .incorrect {
             background-color: #f8d7da;
             color: #721c24;
@@ -2292,8 +2300,23 @@
                 });
                 const data = await response.json();
                 if (response.ok) {
-                    resultDiv.textContent = data.message;
-                    resultDiv.className = 'result-message ' + (data.correct ? 'correct' : 'incorrect');
+                    // Display message based on move quality (independent of success criterion)
+                    let message, cssClass;
+                    if (data.move_quality === 'best') {
+                        message = data.move_san + ' is the best move!';
+                        cssClass = 'correct';
+                    } else if (data.move_quality === 'top3') {
+                        message = data.move_san + ' is among the top 3 moves (rank ' + data.move_rank + ').';
+                        cssClass = 'top3';
+                    } else if (data.move_quality === 'good') {
+                        message = data.move_san + ' is a good move.';
+                        cssClass = 'good-move';
+                    } else {
+                        message = data.move_san + ' is an inaccuracy or worse. Try again.';
+                        cssClass = 'incorrect';
+                    }
+                    resultDiv.textContent = message;
+                    resultDiv.className = 'result-message ' + cssClass;
 
                     // Show continuation if available
                     if (data.continuation && data.continuation.length > 0) {
@@ -2319,8 +2342,12 @@
                         setTimeout(() => {
                             goToPuzzle(data.next_puzzle);
                         }, 1500);
+                    } else if (!data.move_quality) {
+                        // Snap back only if the move was an inaccuracy or worse
+                        game.undo();
+                        board.position(game.fen());
                     } else if (!data.correct) {
-                        // Snap back only if the move was wrong
+                        // Good move but doesn't meet criterion - snap back to let user try again
                         game.undo();
                         board.position(game.fen());
                     }

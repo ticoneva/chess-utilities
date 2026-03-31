@@ -201,7 +201,7 @@
         </div>
         <div class="row flex-column flex-md-row">
             <!-- Left Sidebar -->
-            <div class="col-md-3 p-3 border-end sidebar order-1 order-md-1" id="leftSidebar" style="display: none;">
+            <div class="col-md-3 p-3 border-end sidebar order-1 order-md-1 d-none d-md-block" id="leftSidebar">
                 <!-- Games Panel (contains Load PGN and Games List) -->
                 <div id="gamesPanel">
                     <div class="mb-4">
@@ -224,7 +224,7 @@
             </div>
 
             <!-- Settings Sidebar -->
-            <div class="col-md-3 p-3 border-end sidebar order-1 order-md-1" id="settingsSidebar" style="display: none;">
+            <div class="col-md-3 p-3 border-end sidebar order-1 order-md-1 d-none" id="settingsSidebar">
                 <!-- Settings Panel -->
                 <div class="mb-4" id="settingsPanel">
                     <h5>Settings</h5>
@@ -384,7 +384,7 @@
             </div>
 
             <!-- Right Sidebar -->
-            <div class="col-md-3 p-3 border-start right-sidebar order-1 order-md-3 ms-md-auto" id="rightSidebar" style="display: none;">
+            <div class="col-md-3 p-3 border-start right-sidebar order-1 order-md-3 ms-md-auto d-none d-md-block" id="rightSidebar">
                 <ul class="nav nav-tabs mb-3" role="tablist">
                     <li class="nav-item">
                         <button class="nav-link" data-bs-toggle="tab" data-bs-target="#bestMovesTab">
@@ -679,12 +679,19 @@
             const leftSidebar = document.getElementById('leftSidebar');
             const settingsSidebar = document.getElementById('settingsSidebar');
 
-            // Toggle files sidebar, hide settings sidebar
-            if (leftSidebar.style.display === 'none' || leftSidebar.style.display === '') {
-                leftSidebar.style.display = 'block';
-                settingsSidebar.style.display = 'none';
+            // Hide settings sidebar
+            settingsSidebar.classList.add('d-none');
+            settingsSidebar.classList.remove('d-md-block');
+
+            // Toggle files sidebar
+            if (leftSidebar.classList.contains('d-none')) {
+                leftSidebar.classList.remove('d-none');
+                leftSidebar.classList.add('d-block');
             } else {
-                leftSidebar.style.display = 'none';
+                leftSidebar.classList.add('d-none');
+                leftSidebar.classList.remove('d-block');
+                // Restore responsive class for desktop
+                leftSidebar.classList.add('d-md-block');
             }
         }
 
@@ -692,12 +699,18 @@
             const leftSidebar = document.getElementById('leftSidebar');
             const settingsSidebar = document.getElementById('settingsSidebar');
 
-            // Toggle settings sidebar, hide files sidebar
-            if (settingsSidebar.style.display === 'none' || settingsSidebar.style.display === '') {
-                settingsSidebar.style.display = 'block';
-                leftSidebar.style.display = 'none';
+            // Hide files sidebar on mobile
+            leftSidebar.classList.add('d-none');
+            leftSidebar.classList.remove('d-block');
+            leftSidebar.classList.add('d-md-block');
+
+            // Toggle settings sidebar
+            if (settingsSidebar.classList.contains('d-none')) {
+                settingsSidebar.classList.remove('d-none');
+                settingsSidebar.classList.add('d-block');
             } else {
-                settingsSidebar.style.display = 'none';
+                settingsSidebar.classList.add('d-none');
+                settingsSidebar.classList.remove('d-block');
             }
         }
 
@@ -705,10 +718,14 @@
             const rightSidebar = document.getElementById('rightSidebar');
 
             // Toggle puzzle sidebar
-            if (rightSidebar.style.display === 'none' || rightSidebar.style.display === '') {
-                rightSidebar.style.display = 'block';
+            if (rightSidebar.classList.contains('d-none')) {
+                rightSidebar.classList.remove('d-none');
+                rightSidebar.classList.add('d-block');
             } else {
-                rightSidebar.style.display = 'none';
+                rightSidebar.classList.add('d-none');
+                rightSidebar.classList.remove('d-block');
+                // Restore responsive class for desktop
+                rightSidebar.classList.add('d-md-block');
             }
         }
 

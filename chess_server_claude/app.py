@@ -639,13 +639,10 @@ class GameState:
 
             best_moves_info = self._get_best_moves(board, engine, time_limit)
 
-            # Evaluate the position before user's move
+            # Evaluate the position before user's move (from white's perspective)
             info_before = engine.analyse(board, time_limit)
             score_before = info_before.get("score")
-            if score_before and score_before.relative.mate():
-                before_cp = score_before.relative.mate() * 100
-            else:
-                before_cp = score_before.relative.score(mate_score=10000) if score_before else 0
+            before_cp = score_before.white().score(mate_score=10000) if score_before else 0
             before_eval = before_cp / 100.0
 
             # Evaluate after user's move
@@ -653,11 +650,7 @@ class GameState:
             info_after = engine.analyse(board, time_limit)
             score_after = info_after.get("score")
 
-            if score_after and score_after.relative.mate():
-                after_cp = score_after.relative.mate() * 100
-            else:
-                after_cp = score_after.white().score(mate_score=10000) if score_after else 0
-
+            after_cp = score_after.white().score(mate_score=10000) if score_after else 0
             after_eval = after_cp / 100.0
 
             # Get continuation moves (PV) after user's move

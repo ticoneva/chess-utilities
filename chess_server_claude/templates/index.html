@@ -2395,6 +2395,7 @@
         var continuationOriginalFen = null;
         var continuationOriginalEval = null;
         var continuationPlayInterval = null;
+        var continuationAbortController = null;
         var continuationPlayButton = null;
         var continuationWasCorrect = null;
 
@@ -2404,6 +2405,9 @@
             continuationOriginalEval = parseFloat(document.getElementById('evalScore').textContent);
             continuationPlayButton = button;
             continuationWasCorrect = isCorrect;
+
+            // Create abort controller for this playback
+            continuationAbortController = new AbortController();
 
             // Change button to restore
             button.textContent = '↩';
@@ -2431,13 +2435,17 @@
                     // Update evaluation after each move
                     try {
                         const fen = game.fen();
-                        const response = await fetch(`analyze_quick?fen=${encodeURIComponent(fen)}`);
+                        const response = await fetch(`analyze_quick?fen=${encodeURIComponent(fen)}`, {
+                            signal: continuationAbortController.signal
+                        });
                         const data = await response.json();
-                        if (data.evaluation !== undefined && !data.disabled) {
+                        if (data.evaluation !== undefined && !data.disabled && !continuationAbortController.signal.aborted) {
                             updateEvaluation(data.evaluation);
                         }
                     } catch (e) {
-                        console.error('Error fetching evaluation during continuation play:', e);
+                        if (e.name !== 'AbortError') {
+                            console.error('Error fetching evaluation during continuation play:', e);
+                        }
                     }
                 } else {
                     clearInterval(continuationPlayInterval);
@@ -2448,6 +2456,12 @@
 
         function restoreContinuationPosition(button, isCorrect) {
             if (continuationOriginalFen) {
+                // Abort any pending analysis fetches
+                if (continuationAbortController) {
+                    continuationAbortController.abort();
+                    continuationAbortController = null;
+                }
+
                 game.load(continuationOriginalFen);
                 board.position(continuationOriginalFen);
 

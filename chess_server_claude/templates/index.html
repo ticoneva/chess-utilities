@@ -2246,6 +2246,9 @@
                     // Get best moves for this position
                     getBestMoves(data.fen);
 
+                    // Update evaluation bar
+                    analyzePositionTwoStage(data.fen);
+
                     // Store best move for show answer button
                     if (puzzle.best_moves && puzzle.best_moves.length > 0) {
                         window.currentPuzzleBestMove = puzzle.best_moves[0];

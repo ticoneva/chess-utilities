@@ -284,6 +284,32 @@
                             <option value="wdl" selected>Based on WDL Decrease</option>
                         </select>
                     </div>
+                    <hr>
+                    <h6>Puzzle Options</h6>
+                    <div class="mb-2">
+                        <label class="form-label">Minimum Classification</label>
+                        <select class="form-select" id="minClass">
+                            <option value="inaccuracy">Inaccuracies+</option>
+                            <option value="mistake">Mistakes+</option>
+                            <option value="blunder" selected>Blunders Only</option>
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Success Criterion</label>
+                        <select class="form-select" id="successCriterion">
+                            <option value="top3">Top 3</option>
+                            <option value="best">Best move</option>
+                            <option value="any">Any good move</option>
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Puzzle Order</label>
+                        <select class="form-select" id="puzzleSort">
+                            <option value="asc">Ascending</option>
+                            <option value="desc">Descending</option>
+                            <option value="random">Random</option>
+                        </select>
+                    </div>
                     <div class="mb-2">
                         <button class="btn btn-outline-primary btn-sm w-100" id="reanalyzeBtn">
                             Re-evaluate with Engine
@@ -374,22 +400,6 @@
                     <!-- Puzzles Tab -->
                     <div class="tab-pane fade show active" id="puzzlesTab">
                         <div id="puzzleSettings" class="mb-3" style="display: none;">
-                            <div class="mb-2">
-                                <label class="form-label">Minimum Classification</label>
-                                <select class="form-select" id="minClass">
-                                    <option value="inaccuracy">Inaccuracies+</option>
-                                    <option value="mistake">Mistakes+</option>
-                                    <option value="blunder" selected>Blunders Only</option>
-                                </select>
-                            </div>
-                            <div class="mb-2" id="successCriterionSection" style="display: none;">
-                                <label class="form-label">Success Criterion</label>
-                                <select class="form-select" id="successCriterion">
-                                    <option value="top3">Top 3</option>
-                                    <option value="best">Best move</option>
-                                    <option value="any">Any good move</option>
-                                </select>
-                            </div>
                             <button class="btn btn-outline-secondary btn-sm w-100" id="showAnswer" style="display: none;">
                                 Show Answer
                             </button>
@@ -749,6 +759,9 @@
         document.getElementById('minClass').addEventListener('change', function(e) {
             updatePuzzleSettings();
             loadPuzzles();
+        });
+        document.getElementById('puzzleSort').addEventListener('change', function(e) {
+            rebuildPuzzleResults();
         });
         document.getElementById('successCriterion').addEventListener('change', updatePuzzleSettings);
         document.getElementById('showAnswer').addEventListener('click', async function() {
@@ -1936,7 +1949,22 @@
             let filteredPuzzles = 0;
             let html = '<div class="list-group">';
 
-            const sortedGames = Object.keys(window.gamesWithPuzzles).sort((a, b) => parseInt(a) - parseInt(b));
+            // Get sort order
+            const sortOrder = document.getElementById('puzzleSort')?.value || 'asc';
+
+            let sortedGames = Object.keys(window.gamesWithPuzzles).map(Number);
+
+            if (sortOrder === 'desc') {
+                sortedGames.sort((a, b) => b - a);
+            } else if (sortOrder === 'random') {
+                // Fisher-Yates shuffle
+                for (let i = sortedGames.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [sortedGames[i], sortedGames[j]] = [sortedGames[j], sortedGames[i]];
+                }
+            } else {
+                sortedGames.sort((a, b) => a - b);
+            }
 
             sortedGames.forEach(function(gameIdx) {
                 const gameData = window.gamesWithPuzzles[gameIdx];
@@ -2179,7 +2207,6 @@
         async function goToPuzzle(puzzleIndex) {
             // Enable puzzle mode when user clicks on a puzzle
             puzzleMode = true;
-            document.getElementById('successCriterionSection').style.display = 'block';
             document.getElementById('showAnswer').style.display = 'block';
             updatePuzzleSettings();
 

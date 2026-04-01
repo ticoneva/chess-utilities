@@ -466,6 +466,69 @@
         // Storage key for localStorage
         var STORAGE_KEY = 'chessPuzzleGeneratorState';
 
+        // Puzzle analysis cache key
+        var PUZZLE_CACHE_PREFIX = 'chessPuzzleCache_';
+
+        // Simple hash function for PGN content
+        function hashPGN(pgn) {
+            let hash = 0;
+            for (let i = 0; i < pgn.length; i++) {
+                const char = pgn.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash = hash & hash; // Convert to 32bit integer
+            }
+            return Math.abs(hash).toString(16);
+        }
+
+        // Save puzzle analysis results to cache
+        function savePuzzleCache(pgnString, minClass, gamesWithPuzzles) {
+            try {
+                const hash = hashPGN(pgnString);
+                const cacheKey = PUZZLE_CACHE_PREFIX + hash + '_' + minClass;
+                const cacheData = {
+                    gamesWithPuzzles: gamesWithPuzzles,
+                    timestamp: Date.now(),
+                    minClass: minClass
+                };
+                localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+                console.log('Puzzle analysis cached with key:', cacheKey);
+            } catch (e) {
+                console.error('Error saving puzzle cache:', e);
+            }
+        }
+
+        // Load puzzle analysis results from cache
+        function loadPuzzleCache(pgnString, minClass) {
+            try {
+                const hash = hashPGN(pgnString);
+                const cacheKey = PUZZLE_CACHE_PREFIX + hash + '_' + minClass;
+                const cached = localStorage.getItem(cacheKey);
+                if (cached) {
+                    const cacheData = JSON.parse(cached);
+                    console.log('Puzzle analysis loaded from cache:', cacheKey);
+                    return cacheData.gamesWithPuzzles;
+                }
+            } catch (e) {
+                console.error('Error loading puzzle cache:', e);
+            }
+            return null;
+        }
+
+        // Clear all puzzle caches
+        function clearPuzzleCaches() {
+            try {
+                const keys = Object.keys(localStorage);
+                keys.forEach(key => {
+                    if (key.startsWith(PUZZLE_CACHE_PREFIX)) {
+                        localStorage.removeItem(key);
+                    }
+                });
+                console.log('Puzzle caches cleared');
+            } catch (e) {
+                console.error('Error clearing puzzle caches:', e);
+            }
+        }
+
         // Save state to localStorage
         function saveStateToStorage() {
             try {
@@ -622,6 +685,7 @@
         function clearStateFromStorage() {
             try {
                 localStorage.removeItem(STORAGE_KEY);
+                clearPuzzleCaches();
                 window.savedPgnString = null;
                 console.log('State cleared from localStorage');
             } catch (e) {
@@ -1893,6 +1957,10 @@
                 eventSource.addEventListener('complete', function(e) {
                     const data = JSON.parse(e.data);
                     eventSource.close();
+                    // Cache the puzzle analysis results
+                    if (window.savedPgnString && window.gamesWithPuzzles) {
+                        savePuzzleCache(window.savedPgnString, minClass, window.gamesWithPuzzles);
+                    }
                     finalizePuzzleList(data.total_games);
                     saveStateToStorage();
                 });
@@ -1900,6 +1968,10 @@
                 eventSource.onerror = function(e) {
                     console.error('Reanalyze SSE error:', e);
                     eventSource.close();
+                    // Cache the puzzle analysis results
+                    if (window.savedPgnString && window.gamesWithPuzzles) {
+                        savePuzzleCache(window.savedPgnString, minClass, window.gamesWithPuzzles);
+                    }
                 };
 
             } catch (error) {
@@ -1912,6 +1984,20 @@
             const container = document.getElementById('puzzlesList');
 
             document.getElementById('puzzleSettings').style.display = 'block';
+
+            // Check for cached puzzle analysis
+            if (window.savedPgnString) {
+                const cachedPuzzles = loadPuzzleCache(window.savedPgnString, minClass);
+                if (cachedPuzzles) {
+                    console.log('Using cached puzzle analysis');
+                    window.gamesWithPuzzles = cachedPuzzles;
+                    window.allPuzzles = [];
+                    container.innerHTML = '<div id="puzzleStatus" class="text-center py-3" style="display: none;"></div><div id="puzzleResults"></div>';
+                    rebuildPuzzleResults();
+                    finalizePuzzleList(Object.keys(cachedPuzzles).length);
+                    return;
+                }
+            }
 
             // Show initial loading status
             container.innerHTML = `
@@ -1960,12 +2046,20 @@
                 eventSource.addEventListener('complete', function(e) {
                     const data = JSON.parse(e.data);
                     eventSource.close();
+                    // Cache the puzzle analysis results
+                    if (window.savedPgnString && window.gamesWithPuzzles) {
+                        savePuzzleCache(window.savedPgnString, minClass, window.gamesWithPuzzles);
+                    }
                     finalizePuzzleList(data.total_games);
                 });
 
                 eventSource.onerror = function(e) {
                     console.error('SSE error:', e);
                     eventSource.close();
+                    // Cache the puzzle analysis results
+                    if (window.savedPgnString && window.gamesWithPuzzles) {
+                        savePuzzleCache(window.savedPgnString, minClass, window.gamesWithPuzzles);
+                    }
                     // Fallback to regular fetch
                     fallbackLoadPuzzles(minClass);
                 };

@@ -73,10 +73,10 @@
         .inaccuracy {
             border-left: 3px solid #ffc107;
         }
-        .puzzle-completed {
+        .current-puzzle {
             background-color: #d4edda !important;
         }
-        .current-puzzle {
+        .puzzle-completed {
             background-color: #d4edda !important;
         }
         .move-list {
@@ -345,7 +345,7 @@
             </div>
 
             <!-- Main Content -->
-            <div class="col-md-6 p-3 text-center order-2 order-md-2 mx-auto" id="boardSection">
+            <div class="col-md-6 p-3 text-center order-3 order-md-2 mx-auto" id="boardSection">
                 <h4 id="gameTitle" class="mb-3">No Game Loaded</h4>
 
                 <div id="boardContainer">
@@ -387,7 +387,7 @@
             </div>
 
             <!-- Right Sidebar -->
-            <div class="col-md-3 p-3 border-start right-sidebar order-1 order-md-3 ms-md-auto" id="rightSidebar" style="display: none;">
+            <div class="col-md-3 p-3 border-start right-sidebar order-1 order-md-3" id="rightSidebar" style="display: none;">
                 <ul class="nav nav-tabs mb-3" role="tablist">
                     <li class="nav-item">
                         <button class="nav-link" data-bs-toggle="tab" data-bs-target="#bestMovesTab">
@@ -417,7 +417,7 @@
                     <!-- Puzzles Tab -->
                     <div class="tab-pane fade show active" id="puzzlesTab">
                         <div id="puzzleSettings" class="mb-3" style="display: none;">
-                            <button class="btn btn-outline-secondary btn-sm w-100 mb-2" id="showAnswer" style="display: none;">
+                            <button class="btn btn-outline-secondary btn-sm w-100" id="showAnswer" style="display: none;">
                                 Show Answer
                             </button>
                             <button class="btn btn-outline-danger btn-sm w-100" id="resetProgress" style="display: none;">
@@ -560,19 +560,6 @@
                 document.getElementById('minClass').value = state.puzzle_settings.min_class;
                 document.getElementById('successCriterion').value = state.puzzle_settings.success_criterion;
 
-                // Restore puzzle sort and random seed
-                if (state.puzzle_settings.puzzle_sort !== undefined) {
-                    document.getElementById('puzzleSort').value = state.puzzle_settings.puzzle_sort;
-                }
-                if (state.puzzle_settings.random_seed !== undefined) {
-                    window.puzzleRandomSeed = state.puzzle_settings.random_seed;
-                }
-                if (state.puzzle_settings.completed_puzzles !== undefined) {
-                    window.completedPuzzles = new Set(state.puzzle_settings.completed_puzzles);
-                } else {
-                    window.completedPuzzles = new Set();
-                }
-
                 // Restore anonymous mode
                 if (state.settings.anonymous_mode !== undefined) {
                     document.getElementById('anonymousMode').checked = state.settings.anonymous_mode;
@@ -596,6 +583,19 @@
                     selectedPlayers = new Set(state.settings.selected_players);
                 }
 
+
+                // Restore puzzle sort and random seed
+                if (state.puzzle_settings.puzzle_sort !== undefined) {
+                    document.getElementById('puzzleSort').value = state.puzzle_settings.puzzle_sort;
+                }
+                if (state.puzzle_settings.random_seed !== undefined) {
+                    window.puzzleRandomSeed = state.puzzle_settings.random_seed;
+                }
+                if (state.puzzle_settings.completed_puzzles !== undefined) {
+                    window.completedPuzzles = new Set(state.puzzle_settings.completed_puzzles);
+                } else {
+                    window.completedPuzzles = new Set();
+                }
                 // Apply settings visibility
                 document.getElementById('evaluationSection').style.display =
                     state.settings.show_evaluation ? 'block' : 'none';
@@ -630,33 +630,9 @@
         }
 
         // Attempt to restore state on page load
-        function updateSidebarVisibility() {
-            const isMobile = window.innerWidth < 768;
-            const leftSidebar = document.getElementById('leftSidebar');
-            const rightSidebar = document.getElementById('rightSidebar');
-            
-            // On desktop, show sidebars by default
-            if (!isMobile) {
-                // Show sidebars on desktop unless user explicitly closed them
-                if (!window.userClosedFiles) {
-                    leftSidebar.style.display = 'block';
-                }
-                if (!window.userClosedPuzzle) {
-                    rightSidebar.style.display = 'block';
-                }
-            }
-        }
-        
-        // Track if user manually closed sidebars
-        var userClosedFiles = false;
-        var userClosedPuzzle = false;
-
         document.addEventListener('DOMContentLoaded', function() {
             loadStateFromStorage();
-            updateSidebarVisibility();
         });
-        
-        window.addEventListener('resize', updateSidebarVisibility);
 
         // Flag to prevent auto-navigation during state restoration
         var isRestoringState = false;
@@ -727,16 +703,12 @@
             const leftSidebar = document.getElementById('leftSidebar');
             const settingsSidebar = document.getElementById('settingsSidebar');
 
-            // Hide settings sidebar
-            settingsSidebar.style.display = 'none';
-
-            // Toggle files sidebar
-            if (leftSidebar.style.display === 'none' || !leftSidebar.style.display) {
+            // Toggle files sidebar, hide settings sidebar
+            if (leftSidebar.style.display === 'none' || leftSidebar.style.display === '') {
                 leftSidebar.style.display = 'block';
-                window.userClosedFiles = false;
+                settingsSidebar.style.display = 'none';
             } else {
                 leftSidebar.style.display = 'none';
-                window.userClosedFiles = true;
             }
         }
 
@@ -744,12 +716,10 @@
             const leftSidebar = document.getElementById('leftSidebar');
             const settingsSidebar = document.getElementById('settingsSidebar');
 
-            // Hide files sidebar
-            leftSidebar.style.display = 'none';
-
-            // Toggle settings sidebar
+            // Toggle settings sidebar, hide files sidebar
             if (settingsSidebar.style.display === 'none' || settingsSidebar.style.display === '') {
                 settingsSidebar.style.display = 'block';
+                leftSidebar.style.display = 'none';
             } else {
                 settingsSidebar.style.display = 'none';
             }
@@ -759,12 +729,10 @@
             const rightSidebar = document.getElementById('rightSidebar');
 
             // Toggle puzzle sidebar
-            if (rightSidebar.style.display === 'none' || !rightSidebar.style.display) {
+            if (rightSidebar.style.display === 'none' || rightSidebar.style.display === '') {
                 rightSidebar.style.display = 'block';
-                window.userClosedPuzzle = false;
             } else {
                 rightSidebar.style.display = 'none';
-                window.userClosedPuzzle = true;
             }
         }
 
@@ -909,6 +877,14 @@
                     console.error('Error fetching best moves:', error);
                     resultDiv.textContent = 'Error analyzing position';
                 }
+            }
+        });
+        document.getElementById('resetProgress').addEventListener('click', function() {
+            if (confirm('Reset all puzzle progress? This will clear your completed puzzles history.')) {
+                window.completedPuzzles = new Set();
+                window.puzzleRandomSeed = null;
+                rebuildPuzzleResults();
+                saveStateToStorage();
             }
         });
         document.getElementById('puzzlesTabBtn').addEventListener('click', function() {
@@ -1795,7 +1771,10 @@
             // Update puzzle classification mode
             try {
                 const puzzleSettings = {
-                    classification_mode: document.getElementById('classificationMode').value
+                    classification_mode: document.getElementById('classificationMode').value,
+                        puzzle_sort: document.getElementById('puzzleSort').value,
+                        random_seed: window.puzzleRandomSeed || null,
+                        completed_puzzles: Array.from(window.completedPuzzles || new Set())
                 };
                 await fetch('puzzle_settings', {
                     method: 'POST',
@@ -2127,7 +2106,7 @@
                     // Hide player name in anonymous mode
                     const playerInfo = anonymousMode ? '' : ` • ${isWhiteMove ? whitePlayer : blackPlayer}`;
                     const isCompleted = window.completedPuzzles && window.completedPuzzles.has(puzzleIndex);
-                    const completedClass = isCompleted ? 'puzzle-completed' : '';
+                    const completedClass = isCompleted ? 'puzzle-completed' : ''
 
                     html += `
                         <div class="list-group-item puzzle-item ${p.classification} ${completedClass}" data-puzzle="${puzzleIndex}">
@@ -2323,7 +2302,7 @@
             // Enable puzzle mode when user clicks on a puzzle
             puzzleMode = true;
             document.getElementById('showAnswer').style.display = 'block';
-            document.getElementById('resetProgress').style.display = 'block';
+document.getElementById('resetProgress').style.display = 'block';
             updatePuzzleSettings();
 
             // Show navigation section
@@ -2493,7 +2472,9 @@
                                 goToPuzzle(data.next_puzzle);
                             }, 1500);
                         }
-                    }
+                        setTimeout(() => {
+                            goToPuzzle(data.next_puzzle);
+                        }, 1500);
                     } else if (!data.move_quality) {
                         // Snap back only if the move was an inaccuracy or worse
                         game.undo();

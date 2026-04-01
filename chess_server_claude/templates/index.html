@@ -546,7 +546,8 @@
                         anonymous_mode: document.getElementById('anonymousMode').checked,
                         hide_move_list: document.getElementById('hideMoveList').checked,
                         auto_advance_puzzle: document.getElementById('autoAdvancePuzzle').checked,
-                        selected_players: Array.from(selectedPlayers)
+                        selected_players: Array.from(selectedPlayers),
+                        puzzle_panel_visible: document.getElementById('rightSidebar').style.display !== 'none'
                     },
                     puzzle_settings: {
                         puzzle_mode: puzzleMode,
@@ -647,6 +648,10 @@
                     selectedPlayers = new Set(state.settings.selected_players);
                 }
 
+                // Restore puzzle panel visibility
+                if (state.settings.puzzle_panel_visible !== undefined) {
+                    document.getElementById('rightSidebar').style.display = state.settings.puzzle_panel_visible ? 'block' : 'none';
+                }
 
                 // Restore puzzle sort and random seed
                 if (state.puzzle_settings.puzzle_sort !== undefined) {
@@ -799,6 +804,7 @@
             } else {
                 rightSidebar.style.display = 'none';
             }
+            saveStateToStorage();
         }
 
         // Event Listeners

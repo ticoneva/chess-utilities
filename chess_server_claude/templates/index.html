@@ -1980,6 +1980,19 @@
             }
         }
 
+        function runBackgroundAnalysis(minClass) {
+            // Run server-side analysis in background without UI updates
+            // This ensures puzzle_check endpoint works with cached results
+            const eventSource = new EventSource(`puzzles_stream?min_class=${minClass}`);
+            eventSource.addEventListener('complete', function(e) {
+                eventSource.close();
+                console.log('Background analysis complete');
+            });
+            eventSource.onerror = function(e) {
+                eventSource.close();
+            };
+        }
+
         async function loadPuzzles() {
             const minClass = document.getElementById('minClass').value;
             const container = document.getElementById('puzzlesList');
@@ -1996,6 +2009,8 @@
                     container.innerHTML = '<div id="puzzleStatus" class="text-center py-3" style="display: none;"></div><div id="puzzleResults"></div>';
                     rebuildPuzzleResults();
                     finalizePuzzleList(Object.keys(cachedPuzzles).length);
+                    // Run server analysis in background so puzzle_check works
+                    runBackgroundAnalysis(minClass);
                     return;
                 }
             }

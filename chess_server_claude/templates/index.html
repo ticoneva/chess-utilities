@@ -204,7 +204,7 @@
         </div>
         <div class="row flex-column flex-md-row">
             <!-- Left Sidebar -->
-            <div class="col-md-3 p-3 border-end sidebar order-1 order-md-1 d-none d-md-block" id="leftSidebar">
+            <div class="col-md-3 p-3 border-end sidebar order-1 order-md-1" id="leftSidebar" style="display: none;">
                 <!-- Games Panel (contains Load PGN and Games List) -->
                 <div id="gamesPanel">
                     <div class="mb-4">
@@ -227,7 +227,7 @@
             </div>
 
             <!-- Settings Sidebar -->
-            <div class="col-md-3 p-3 border-end sidebar order-1 order-md-1 d-none" id="settingsSidebar">
+            <div class="col-md-3 p-3 border-end sidebar order-1 order-md-1" id="settingsSidebar" style="display: none;">
                 <!-- Settings Panel -->
                 <div class="mb-4" id="settingsPanel">
                     <h5>Settings</h5>
@@ -387,7 +387,7 @@
             </div>
 
             <!-- Right Sidebar -->
-            <div class="col-md-3 p-3 border-start right-sidebar order-1 order-md-3 ms-md-auto d-none d-md-block" id="rightSidebar">
+            <div class="col-md-3 p-3 border-start right-sidebar order-1 order-md-3 ms-md-auto" id="rightSidebar" style="display: none;">
                 <ul class="nav nav-tabs mb-3" role="tablist">
                     <li class="nav-item">
                         <button class="nav-link" data-bs-toggle="tab" data-bs-target="#bestMovesTab">
@@ -630,9 +630,33 @@
         }
 
         // Attempt to restore state on page load
+        function updateSidebarVisibility() {
+            const isMobile = window.innerWidth < 768;
+            const leftSidebar = document.getElementById('leftSidebar');
+            const rightSidebar = document.getElementById('rightSidebar');
+            
+            // On desktop, show sidebars by default
+            if (!isMobile) {
+                // Show sidebars on desktop unless user explicitly closed them
+                if (!window.userClosedFiles) {
+                    leftSidebar.style.display = 'block';
+                }
+                if (!window.userClosedPuzzle) {
+                    rightSidebar.style.display = 'block';
+                }
+            }
+        }
+        
+        // Track if user manually closed sidebars
+        var userClosedFiles = false;
+        var userClosedPuzzle = false;
+
         document.addEventListener('DOMContentLoaded', function() {
             loadStateFromStorage();
+            updateSidebarVisibility();
         });
+        
+        window.addEventListener('resize', updateSidebarVisibility);
 
         // Flag to prevent auto-navigation during state restoration
         var isRestoringState = false;
@@ -704,18 +728,15 @@
             const settingsSidebar = document.getElementById('settingsSidebar');
 
             // Hide settings sidebar
-            settingsSidebar.classList.add('d-none');
-            settingsSidebar.classList.remove('d-md-block');
+            settingsSidebar.style.display = 'none';
 
             // Toggle files sidebar
-            if (leftSidebar.classList.contains('d-none')) {
-                leftSidebar.classList.remove('d-none');
-                leftSidebar.classList.add('d-block');
+            if (leftSidebar.style.display === 'none' || !leftSidebar.style.display) {
+                leftSidebar.style.display = 'block';
+                window.userClosedFiles = false;
             } else {
-                leftSidebar.classList.add('d-none');
-                leftSidebar.classList.remove('d-block');
-                // Restore responsive class for desktop
-                leftSidebar.classList.add('d-md-block');
+                leftSidebar.style.display = 'none';
+                window.userClosedFiles = true;
             }
         }
 
@@ -723,18 +744,14 @@
             const leftSidebar = document.getElementById('leftSidebar');
             const settingsSidebar = document.getElementById('settingsSidebar');
 
-            // Hide files sidebar on mobile
-            leftSidebar.classList.add('d-none');
-            leftSidebar.classList.remove('d-block');
-            leftSidebar.classList.add('d-md-block');
+            // Hide files sidebar
+            leftSidebar.style.display = 'none';
 
             // Toggle settings sidebar
-            if (settingsSidebar.classList.contains('d-none')) {
-                settingsSidebar.classList.remove('d-none');
-                settingsSidebar.classList.add('d-block');
+            if (settingsSidebar.style.display === 'none' || settingsSidebar.style.display === '') {
+                settingsSidebar.style.display = 'block';
             } else {
-                settingsSidebar.classList.add('d-none');
-                settingsSidebar.classList.remove('d-block');
+                settingsSidebar.style.display = 'none';
             }
         }
 
@@ -742,14 +759,12 @@
             const rightSidebar = document.getElementById('rightSidebar');
 
             // Toggle puzzle sidebar
-            if (rightSidebar.classList.contains('d-none')) {
-                rightSidebar.classList.remove('d-none');
-                rightSidebar.classList.add('d-block');
+            if (rightSidebar.style.display === 'none' || !rightSidebar.style.display) {
+                rightSidebar.style.display = 'block';
+                window.userClosedPuzzle = false;
             } else {
-                rightSidebar.classList.add('d-none');
-                rightSidebar.classList.remove('d-block');
-                // Restore responsive class for desktop
-                rightSidebar.classList.add('d-md-block');
+                rightSidebar.style.display = 'none';
+                window.userClosedPuzzle = true;
             }
         }
 

@@ -2575,6 +2575,8 @@ document.getElementById('resetProgress').style.display = 'block';
                         if (window.currentPuzzleIndex !== undefined) {
                             window.completedPuzzles.add(window.currentPuzzleIndex);
                             saveStateToStorage();
+                            // Update UI to show completed checkmark
+                            rebuildPuzzleResults();
                         }
                         
                         if (data.next_puzzle !== null && autoAdvancePuzzle) {
@@ -2582,9 +2584,6 @@ document.getElementById('resetProgress').style.display = 'block';
                                 goToPuzzle(data.next_puzzle);
                             }, 1500);
                         }
-                        setTimeout(() => {
-                            goToPuzzle(data.next_puzzle);
-                        }, 1500);
                     } else if (!data.move_quality) {
                         // Snap back only if the move was an inaccuracy or worse
                         game.undo();

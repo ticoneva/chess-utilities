@@ -73,6 +73,9 @@
         .inaccuracy {
             border-left: 3px solid #ffc107;
         }
+        .puzzle-completed {
+            background-color: #d4edda !important;
+        }
         .current-puzzle {
             background-color: #d4edda !important;
         }
@@ -414,8 +417,11 @@
                     <!-- Puzzles Tab -->
                     <div class="tab-pane fade show active" id="puzzlesTab">
                         <div id="puzzleSettings" class="mb-3" style="display: none;">
-                            <button class="btn btn-outline-secondary btn-sm w-100" id="showAnswer" style="display: none;">
+                            <button class="btn btn-outline-secondary btn-sm w-100 mb-2" id="showAnswer" style="display: none;">
                                 Show Answer
+                            </button>
+                            <button class="btn btn-outline-danger btn-sm w-100" id="resetProgress" style="display: none;">
+                                Reset Progress
                             </button>
                         </div>
                         <div id="puzzlesListContainer" style="flex: 1; overflow-y: auto; min-height: 0;">
@@ -453,6 +459,8 @@
         var anonymousMode = false;
         var hideMoveList = false;
         var autoAdvancePuzzle = false;
+        var completedPuzzles = new Set();
+        var puzzleRandomSeed = null;
         var selectedPlayers = new Set(); // Set of selected player names for filtering
 
         // Storage key for localStorage
@@ -481,7 +489,10 @@
                         success_criterion: document.getElementById('successCriterion').value,
                         current_puzzle_index: window.currentPuzzleIndex || 0,
                         min_class: document.getElementById('minClass').value,
-                        classification_mode: document.getElementById('classificationMode').value
+                        classification_mode: document.getElementById('classificationMode').value,
+                        puzzle_sort: document.getElementById('puzzleSort').value,
+                        random_seed: window.puzzleRandomSeed || null,
+                        completed_puzzles: Array.from(window.completedPuzzles || new Set())
                     }
                 };
 
@@ -548,6 +559,19 @@
                 // Restore puzzle settings UI
                 document.getElementById('minClass').value = state.puzzle_settings.min_class;
                 document.getElementById('successCriterion').value = state.puzzle_settings.success_criterion;
+
+                // Restore puzzle sort and random seed
+                if (state.puzzle_settings.puzzle_sort !== undefined) {
+                    document.getElementById('puzzleSort').value = state.puzzle_settings.puzzle_sort;
+                }
+                if (state.puzzle_settings.random_seed !== undefined) {
+                    window.puzzleRandomSeed = state.puzzle_settings.random_seed;
+                }
+                if (state.puzzle_settings.completed_puzzles !== undefined) {
+                    window.completedPuzzles = new Set(state.puzzle_settings.completed_puzzles);
+                } else {
+                    window.completedPuzzles = new Set();
+                }
 
                 // Restore anonymous mode
                 if (state.settings.anonymous_mode !== undefined) {
@@ -2011,13 +2035,31 @@
             if (sortOrder === 'desc') {
                 sortedGames.sort((a, b) => b - a);
             } else if (sortOrder === 'random') {
-                // Fisher-Yates shuffle
+                // Seeded Fisher-Yates shuffle for reproducibility
+                // Generate seed if not exists
+                if (window.puzzleRandomSeed === null) {
+                    window.puzzleRandomSeed = Date.now();
+                    saveStateToStorage();
+                }
+                // Simple seeded random number generator (mulberry32)
+                let seed = window.puzzleRandomSeed;
+                const random = () => {
+                    let t = seed += 0x6D2B79F5;
+                    t = Math.imul(t ^ t >>> 15, t | 1);
+                    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+                    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+                };
+                // Fisher-Yates shuffle with seeded random
                 for (let i = sortedGames.length - 1; i > 0; i--) {
-                    const j = Math.floor(Math.random() * (i + 1));
+                    const j = Math.floor(random() * (i + 1));
                     [sortedGames[i], sortedGames[j]] = [sortedGames[j], sortedGames[i]];
                 }
             } else {
                 sortedGames.sort((a, b) => a - b);
+                // Clear seed when not random
+                if (window.puzzleRandomSeed !== null) {
+                    window.puzzleRandomSeed = null;
+                }
             }
 
             sortedGames.forEach(function(gameIdx) {
@@ -2069,11 +2111,13 @@
 
                     // Hide player name in anonymous mode
                     const playerInfo = anonymousMode ? '' : ` • ${isWhiteMove ? whitePlayer : blackPlayer}`;
+                    const isCompleted = window.completedPuzzles && window.completedPuzzles.has(puzzleIndex);
+                    const completedClass = isCompleted ? 'puzzle-completed' : '';
 
                     html += `
-                        <div class="list-group-item puzzle-item ${p.classification}" data-puzzle="${puzzleIndex}">
+                        <div class="list-group-item puzzle-item ${p.classification} ${completedClass}" data-puzzle="${puzzleIndex}">
                             <div class="d-flex justify-content-between">
-                                <span>Puzzle ${puzzleIndex + 1}</span>
+                                <span>Puzzle ${puzzleIndex + 1}${isCompleted ? ' ✓' : ''}</span>
                                 <small class="${p.eval_change > 0 ? 'text-danger' : ''}">${p.eval_change.toFixed(1)}</small>
                             </div>
                             <small class="text-muted">Move ${Math.floor(p.ply / 2) + 1}${playerInfo}</small>
@@ -2229,11 +2273,13 @@
                     var p = item.puzzle;
                     var i = item.index;
                     var isCurrent = i === currentIndex;
+                    var isCompleted = window.completedPuzzles && window.completedPuzzles.has(i);
+                    var completedClass = isCompleted ? 'puzzle-completed' : '';
                     var classLabel = p.classification.charAt(0).toUpperCase() + p.classification.slice(1);
                     html += `
-                        <div class="list-group-item puzzle-item ${p.classification} ${isCurrent ? 'current-puzzle' : ''}" data-puzzle="${i}">
+                        <div class="list-group-item puzzle-item ${p.classification} ${isCurrent ? 'current-puzzle' : ''} ${completedClass}" data-puzzle="${i}">
                             <div class="d-flex justify-content-between">
-                                <span>${classLabel}: ${p.san}</span>
+                                <span>${classLabel}: ${p.san}${isCompleted ? ' ✓' : ''}</span>
                                 <small class="${p.eval_change > 0 ? 'text-danger' : ''}">${p.eval_change.toFixed(1)}</small>
                             </div>
                             <small class="text-muted">Move ${Math.floor(p.ply / 2) + 1} (${p.san})</small>
@@ -2262,6 +2308,7 @@
             // Enable puzzle mode when user clicks on a puzzle
             puzzleMode = true;
             document.getElementById('showAnswer').style.display = 'block';
+            document.getElementById('resetProgress').style.display = 'block';
             updatePuzzleSettings();
 
             // Show navigation section
@@ -2419,10 +2466,19 @@
                         }
                     }
 
-                    if (data.correct && data.next_puzzle !== null && autoAdvancePuzzle) {
-                        setTimeout(() => {
-                            goToPuzzle(data.next_puzzle);
-                        }, 1500);
+                    if (data.correct) {
+                        // Mark puzzle as completed
+                        if (window.currentPuzzleIndex !== undefined) {
+                            window.completedPuzzles.add(window.currentPuzzleIndex);
+                            saveStateToStorage();
+                        }
+                        
+                        if (data.next_puzzle !== null && autoAdvancePuzzle) {
+                            setTimeout(() => {
+                                goToPuzzle(data.next_puzzle);
+                            }, 1500);
+                        }
+                    }
                     } else if (!data.move_quality) {
                         // Snap back only if the move was an inaccuracy or worse
                         game.undo();

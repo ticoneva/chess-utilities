@@ -318,8 +318,14 @@ playwright-cli resize 375 812
 - Use inline `style.display` for toggling (not Bootstrap classes)
 - Order classes: panels should have `order-1` for mobile, board `order-3`
 
+### Auto-advance not following puzzle sort order
+- The frontend calculates next puzzle index from `window.allPuzzles` (sorted array)
+- Backend's `next_puzzle` response is ignored for auto-advance since it uses unsorted order
+- This ensures auto-advance respects ascending, descending, or random sort settings
+
 ## Recent Changes (Git History)
 
+- `0808635` - Fix auto-advance puzzle order to respect sort settings
 - `c922a4a` - Save and restore puzzle panel visibility state
 - `b123a14` - Change completed puzzle background to light grey
 - `19bcd27` - Fix puzzle completion: remove duplicate goToPuzzle and update UI

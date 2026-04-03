@@ -2584,11 +2584,18 @@ document.getElementById('resetProgress').style.display = 'block';
                             // Update UI to show completed checkmark
                             rebuildPuzzleResults();
                         }
-                        
-                        if (data.next_puzzle !== null && autoAdvancePuzzle) {
-                            setTimeout(() => {
-                                goToPuzzle(data.next_puzzle);
-                            }, 1500);
+
+                        if (autoAdvancePuzzle) {
+                            // Calculate next puzzle index based on sorted order, not backend's unsorted order
+                            const currentIndex = window.currentPuzzleIndex;
+                            let nextIndex = currentIndex + 1;
+
+                            // Check if there's a next puzzle in the sorted list
+                            if (nextIndex < window.allPuzzles.length) {
+                                setTimeout(() => {
+                                    goToPuzzle(nextIndex);
+                                }, 1500);
+                            }
                         }
                     } else if (!data.move_quality) {
                         // Snap back only if the move was an inaccuracy or worse

@@ -839,6 +839,13 @@
                 document.getElementById('moveListSection').style.display = hideMoveList ? 'none' : 'block';
             } else {
                 bestMovesSidebar.style.display = 'none';
+                // Switch back to puzzle mode if puzzle panel is visible
+                if (document.getElementById('rightSidebar').style.display !== 'none') {
+                    puzzleMode = true;
+                    document.getElementById('moveNavigation').style.display = 'none';
+                    document.getElementById('puzzleNavigation').style.display = 'flex';
+                    document.getElementById('moveListSection').style.display = 'none';
+                }
             }
             updatePanelToggleIcons();
         }

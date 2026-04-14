@@ -22,6 +22,10 @@ import chess.engine
 # Critical constants
 STOCKFISH_PATH = "/opt/network/apps/chess/stockfish/stockfish-ubuntu-x86-64-avx2"
 DEFAULT_PORT = 5001
+DEFAULT_THREADS = 4
+
+# Global Stockfish thread count (set via --threads CLI option)
+stockfish_threads = DEFAULT_THREADS
 
 # Classification thresholds (centipawns)
 BLUNDER_THRESHOLD = 300
@@ -45,7 +49,7 @@ games_db: Dict[str, "GameState"] = {}
 class GameState:
     """Manages sessions, game state, and analysis for PGN games."""
 
-    def __init__(self, pgn_string: str):
+    def __init__(self, pgn_string: str, threads: int = 4):
         """Parse PGN and prepare game data."""
         self.pgn_string = pgn_string
         self.games: List[Dict[str, Any]] = []
@@ -69,7 +73,7 @@ class GameState:
             "num_best_moves": 3,
             "time_limit": 0.5,  # For real-time analysis during navigation
             "puzzle_time_limit": 0.1,  # For puzzle preparation/analysis
-            "threads": 4,
+            "threads": threads,
         }
 
         # Puzzle mode settings
@@ -756,7 +760,7 @@ def upload_pgn():
 
     # Create new game state
     session_id = str(datetime.now().timestamp())
-    game_state = GameState(pgn_string)
+    game_state = GameState(pgn_string, threads=stockfish_threads)
     games_db[session_id] = game_state
 
     session["session_id"] = session_id
@@ -1324,7 +1328,7 @@ def load_sample():
 
     # Create new game state
     session_id = str(datetime.now().timestamp())
-    game_state = GameState(pgn_string)
+    game_state = GameState(pgn_string, threads=stockfish_threads)
     games_db[session_id] = game_state
 
     session["session_id"] = session_id
@@ -1351,7 +1355,7 @@ def restore_session():
     try:
         # Create new game state from the PGN string
         session_id = str(datetime.now().timestamp())
-        game_state = GameState(pgn_string)
+        game_state = GameState(pgn_string, threads=stockfish_threads)
         games_db[session_id] = game_state
 
         # Restore settings if provided
@@ -1487,6 +1491,11 @@ if __name__ == "__main__":
                         help=f"Port to run the server on (default: {DEFAULT_PORT})")
     parser.add_argument("--debug", action="store_true",
                         help="Run in debug mode")
+    parser.add_argument("--threads", type=int, default=DEFAULT_THREADS,
+                        help=f"Number of Stockfish threads (default: {DEFAULT_THREADS})")
     args = parser.parse_args()
+
+    global stockfish_threads
+    stockfish_threads = args.threads
 
     app.run(host="0.0.0.0", port=args.port, debug=args.debug)

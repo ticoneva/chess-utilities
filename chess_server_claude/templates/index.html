@@ -313,12 +313,19 @@
                     <hr>
                     <h6>Puzzle Options</h6>
                     <div class="mb-2">
-                        <label class="form-label">Minimum Classification</label>
-                        <select class="form-select" id="minClass">
-                            <option value="inaccuracy">Inaccuracies+</option>
-                            <option value="mistake">Mistakes+</option>
-                            <option value="blunder" selected>Blunders Only</option>
-                        </select>
+                        <label class="form-label">Show Classifications</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="showInaccuracy">
+                            <label class="form-check-label" for="showInaccuracy">Inaccuracies</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="showMistake">
+                            <label class="form-check-label" for="showMistake">Mistakes</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="showBlunder" checked>
+                            <label class="form-check-label" for="showBlunder">Blunders</label>
+                        </div>
                     </div>
                     <div class="mb-2">
                         <label class="form-label">Success Criterion</label>
@@ -477,6 +484,15 @@
             return Math.abs(hash).toString(16);
         }
 
+        // Get allowed classifications from checkboxes
+        function getAllowedClassifications() {
+            var allowed = [];
+            if (document.getElementById('showBlunder').checked) allowed.push('blunder');
+            if (document.getElementById('showMistake').checked) allowed.push('mistake');
+            if (document.getElementById('showInaccuracy').checked) allowed.push('inaccuracy');
+            return allowed;
+        }
+
         // Save puzzle analysis results to cache
         function savePuzzleCache(pgnString, minClass, gamesWithPuzzles) {
             try {
@@ -561,7 +577,7 @@
                         puzzle_mode: puzzleMode,
                         success_criterion: document.getElementById('successCriterion').value,
                         current_puzzle_index: window.currentPuzzleIndex || 0,
-                        min_class: document.getElementById('minClass').value,
+                        min_class: getAllowedClassifications(),
                         classification_mode: document.getElementById('classificationMode').value,
                         puzzle_sort: document.getElementById('puzzleSort').value,
                         random_seed: window.puzzleRandomSeed || null,
@@ -630,7 +646,18 @@
                 document.getElementById('classificationMode').value = state.puzzle_settings.classification_mode;
 
                 // Restore puzzle settings UI
-                document.getElementById('minClass').value = state.puzzle_settings.min_class;
+                var savedMinClass = state.puzzle_settings.min_class;
+                if (Array.isArray(savedMinClass)) {
+                    document.getElementById('showBlunder').checked = savedMinClass.includes('blunder');
+                    document.getElementById('showMistake').checked = savedMinClass.includes('mistake');
+                    document.getElementById('showInaccuracy').checked = savedMinClass.includes('inaccuracy');
+                } else if (typeof savedMinClass === 'string') {
+                    // Migrate old single-value format: each class now means only that class
+                    var allowed = [savedMinClass];
+                    document.getElementById('showBlunder').checked = allowed.includes('blunder');
+                    document.getElementById('showMistake').checked = allowed.includes('mistake');
+                    document.getElementById('showInaccuracy').checked = allowed.includes('inaccuracy');
+                }
                 document.getElementById('successCriterion').value = state.puzzle_settings.success_criterion;
 
                 // Restore anonymous mode
@@ -945,9 +972,11 @@
             // Trigger forced re-analysis
             forceReanalyze();
         });
-        document.getElementById('minClass').addEventListener('change', function(e) {
-            updatePuzzleSettings();
-            loadPuzzles();
+        ['showBlunder', 'showMistake', 'showInaccuracy'].forEach(function(id) {
+            document.getElementById(id).addEventListener('change', function(e) {
+                updatePuzzleSettings();
+                loadPuzzles();
+            });
         });
         document.getElementById('puzzleSort').addEventListener('change', function(e) {
             rebuildPuzzleResults();
@@ -1931,7 +1960,7 @@
             const settings = {
                 puzzle_mode: puzzleMode,
                 success_criterion: document.getElementById('successCriterion').value,
-                min_class: document.getElementById('minClass').value
+                min_class: getAllowedClassifications().join(',')
             };
 
             try {
@@ -1953,7 +1982,7 @@
         }
 
         async function forceReanalyze() {
-            const minClass = document.getElementById('minClass').value;
+            const minClass = getAllowedClassifications().join(',');
             const container = document.getElementById('puzzlesList');
 
             document.getElementById('puzzleSettings').style.display = 'block';
@@ -2042,7 +2071,7 @@
         }
 
         async function loadPuzzles() {
-            const minClass = document.getElementById('minClass').value;
+            const minClass = getAllowedClassifications().join(',');
             const container = document.getElementById('puzzlesList');
 
             document.getElementById('puzzleSettings').style.display = 'block';
@@ -2282,9 +2311,9 @@
             html += '</div>';
 
             if (filteredPuzzles > 0) {
-                const minClass = document.getElementById('minClass').value;
-                let classLabel = minClass === 'blunder' ? 'Blunders Only' :
-                               minClass === 'mistake' ? 'Mistakes+' : 'Inaccuracies+';
+                const allowedClasses = getAllowedClassifications();
+                let classLabel = allowedClasses.length === 3 ? 'Inaccuracies+' :
+                    allowedClasses.join(', ').replace(/\b\w/g, c => c.toUpperCase());
 
                 resultsDiv.innerHTML = `<div class="alert alert-info py-1 small mb-2">
                     Found ${filteredPuzzles} ${classLabel}${selectedPlayers.size > 0 ? ' (filtered)' : ''}
@@ -2328,19 +2357,17 @@
                 const totalPuzzles = window.allPuzzles.length;
 
                 if (totalPuzzles === 0) {
-                    const minClass = document.getElementById('minClass').value;
-                    let message = '<p class="text-muted">No puzzles found at this classification level.</p>';
-                    if (minClass === 'blunder') {
-                        message += '<p class="text-info small">Try selecting "Mistakes+" to include both blunders and mistakes.</p>';
-                    } else if (minClass === 'mistake') {
-                        message += '<p class="text-info small">Try selecting "Inaccuracies+" to include all puzzle types.</p>';
+                    let message = '<p class="text-muted">No puzzles found for the selected classifications.</p>';
+                    const allowedClasses = getAllowedClassifications();
+                    if (allowedClasses.length < 3) {
+                        message += '<p class="text-info small">Try enabling more classification types to find puzzles.</p>';
                     }
                     resultsDiv.innerHTML = message;
                     if (downloadSection) downloadSection.style.display = 'none';
                 } else {
-                    const minClass = document.getElementById('minClass').value;
-                    let classLabel = minClass === 'blunder' ? 'Blunders Only' :
-                                   minClass === 'mistake' ? 'Mistakes+' : 'Inaccuracies+';
+                    const allowedClasses = getAllowedClassifications();
+                    let classLabel = allowedClasses.length === 3 ? 'Inaccuracies+' :
+                        allowedClasses.join(', ').replace(/\b\w/g, c => c.toUpperCase());
 
                     // Remove the "so far..." alert if it exists
                     const infoAlert = resultsDiv.querySelector('.alert-info');
@@ -2358,7 +2385,7 @@
                     if (downloadSection) {
                         const downloadLink = document.getElementById('downloadAnnotatedPgn');
                         if (downloadLink) {
-                            downloadLink.href = `download_annotated_pgn?min_class=${minClass}`;
+                            downloadLink.href = `download_annotated_pgn?min_class=${getAllowedClassifications().join(',')}`;
                         }
                         downloadSection.style.display = 'block';
                     }
@@ -2398,12 +2425,10 @@
             const container = document.getElementById('puzzlesList');
 
             if (!puzzles || puzzles.length === 0) {
-                const minClass = document.getElementById('minClass').value;
-                let message = '<p class="text-muted">No puzzles found at this classification level.</p>';
-                if (minClass === 'blunder') {
-                    message += '<p class="text-info small">Try selecting "Mistakes+" to include both blunders and mistakes.</p>';
-                } else if (minClass === 'mistake') {
-                    message += '<p class="text-info small">Try selecting "Inaccuracies+" to include all puzzle types.</p>';
+                let message = '<p class="text-muted">No puzzles found for the selected classifications.</p>';
+                const allowedClasses = getAllowedClassifications();
+                if (allowedClasses.length < 3) {
+                    message += '<p class="text-info small">Try enabling more classification types to find puzzles.</p>';
                 }
                 container.innerHTML = message;
                 return;
@@ -2444,9 +2469,9 @@
             html += '</div>';
 
             // Add success message at top
-            const minClass = document.getElementById('minClass').value;
-            let classLabel = minClass === 'blunder' ? 'Blunders Only' :
-                           minClass === 'mistake' ? 'Mistakes+' : 'Inaccuracies+';
+            const allowedClasses = getAllowedClassifications();
+            let classLabel = allowedClasses.length === 3 ? 'Inaccuracies+' :
+                allowedClasses.join(', ').replace(/\b\w/g, c => c.toUpperCase());
             const successMsg = `<div class="alert alert-success py-1 small">
                 ✓ Analysis complete! Found ${puzzles.length} ${classLabel}
             </div>`;

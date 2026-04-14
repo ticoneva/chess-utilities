@@ -460,12 +460,17 @@
         var anonymousMode = false;
         var hideMoveList = false;
         var autoAdvancePuzzle = false;
-        var completedPuzzles = new Set();
+        var completedPuzzles = new Set(); // Set of FEN prefix strings
         var puzzleRandomSeed = null;
         var selectedPlayers = new Set(); // Set of selected player names for filtering
 
         // Storage key for localStorage
         var STORAGE_KEY = 'chessPuzzleGeneratorState';
+
+        // Extract FEN prefix (first 4 fields) for stable position identification
+        function fenPrefix(fen) {
+            return fen.split(' ').slice(0, 4).join(' ');
+        }
 
         // Puzzle analysis cache key
         var PUZZLE_CACHE_PREFIX = 'chessPuzzleCache_';
@@ -506,6 +511,18 @@
                 const cached = localStorage.getItem(cacheKey);
                 if (cached) {
                     const cacheData = JSON.parse(cached);
+                    // Invalidate cache if puzzles lack FEN data (old format)
+                    const games = cacheData.gamesWithPuzzles;
+                    if (games) {
+                        const hasFen = Object.values(games).some(function(g) {
+                            return g.puzzles && g.puzzles.some(function(p) { return p.fen; });
+                        });
+                        if (!hasFen) {
+                            console.log('Puzzle cache missing FEN data, invalidating');
+                            localStorage.removeItem(cacheKey);
+                            return null;
+                        }
+                    }
                     console.log('Puzzle analysis loaded from cache:', cacheKey);
                     return cacheData.gamesWithPuzzles;
                 }
@@ -661,7 +678,12 @@
                     window.puzzleRandomSeed = state.puzzle_settings.random_seed;
                 }
                 if (state.puzzle_settings.completed_puzzles !== undefined) {
-                    window.completedPuzzles = new Set(state.puzzle_settings.completed_puzzles);
+                    // Migrate old index-based entries (numbers) by discarding them;
+                    // keep only FEN-prefix strings
+                    const migrated = state.puzzle_settings.completed_puzzles.filter(
+                        function(item) { return typeof item === 'string'; }
+                    );
+                    window.completedPuzzles = new Set(migrated);
                 } else {
                     window.completedPuzzles = new Set();
                 }
@@ -2221,7 +2243,8 @@
 
                     // Hide player name in anonymous mode
                     const playerInfo = anonymousMode ? '' : ` • ${isWhiteMove ? whitePlayer : blackPlayer}`;
-                    const isCompleted = window.completedPuzzles && window.completedPuzzles.has(puzzleIndex);
+                    const pKey = p.fen ? fenPrefix(p.fen) : null;
+                    const isCompleted = pKey && window.completedPuzzles && window.completedPuzzles.has(pKey);
                     const completedClass = isCompleted ? 'puzzle-completed' : ''
 
                     html += `
@@ -2383,7 +2406,7 @@
                     var p = item.puzzle;
                     var i = item.index;
                     var isCurrent = i === currentIndex;
-                    var isCompleted = window.completedPuzzles && window.completedPuzzles.has(i);
+                    var isCompleted = p.fen && window.completedPuzzles && window.completedPuzzles.has(fenPrefix(p.fen));
                     var completedClass = isCompleted ? 'puzzle-completed' : '';
                     var classLabel = p.classification.charAt(0).toUpperCase() + p.classification.slice(1);
                     html += `
@@ -2577,9 +2600,12 @@ document.getElementById('resetProgress').style.display = 'block';
                     }
 
                     if (data.correct) {
-                        // Mark puzzle as completed
+                        // Mark puzzle as completed using FEN prefix
                         if (window.currentPuzzleIndex !== undefined) {
-                            window.completedPuzzles.add(window.currentPuzzleIndex);
+                            var currentPuzzle = window.allPuzzles[window.currentPuzzleIndex];
+                            if (currentPuzzle && currentPuzzle.fen) {
+                                window.completedPuzzles.add(fenPrefix(currentPuzzle.fen));
+                            }
                             saveStateToStorage();
                             // Update UI to show completed checkmark
                             rebuildPuzzleResults();

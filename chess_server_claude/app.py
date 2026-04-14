@@ -312,6 +312,7 @@ class GameState:
                     # Get best moves at the position before the move
                     board.pop()  # Go back to before the move
                     best_moves_info = self._get_best_moves(board, engine, time_limit)
+                    fen = board.fen()
                     board.push(move)  # Put the move back
 
                     puzzles.append({
@@ -324,6 +325,7 @@ class GameState:
                         "classification": classification,
                         "game_index": game_index,
                         "best_moves": best_moves_info,
+                        "fen": fen,
                     })
 
         self._game_puzzles[game_index] = puzzles
@@ -340,6 +342,7 @@ class GameState:
     def _extract_puzzles_from_annotations(self, game_index: int, moves: List[Dict[str, Any]], send_progress: bool = False) -> List[Dict[str, Any]]:
         """Extract puzzles from existing PGN annotations (NAGs) without running engine."""
         puzzles = []
+        board = chess.Board()
 
         for i, move_info in enumerate(moves):
             # Send progress update (only for a few moves to avoid spam)
@@ -365,7 +368,12 @@ class GameState:
                     "game_index": game_index,
                     "best_moves": [],  # Will be fetched on demand when user clicks puzzle
                     "from_annotation": True,
+                    "fen": board.fen(),
                 })
+
+            # Advance board for next move
+            move = chess.Move.from_uci(move_info["uci"])
+            board.push(move)
 
         return puzzles
 

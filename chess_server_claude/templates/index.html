@@ -856,7 +856,7 @@
             // Illegal move
             if (move === null) return 'snapback';
 
-            var move_uci = source + target;
+            var move_uci = source + target + (move.promotion ? move.promotion : '');
 
             if (puzzleMode) {
                 // In puzzle mode, keep the piece on board while checking

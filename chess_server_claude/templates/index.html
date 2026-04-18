@@ -359,10 +359,14 @@
                     <hr>
                     <div class="mb-2">
                         <label class="form-label">Browser Storage</label>
-                        <button class="btn btn-outline-danger btn-sm w-100" id="clearStorageBtn">
-                            Clear Saved Data
+                        <button class="btn btn-outline-danger btn-sm w-100" id="clearGameDataBtn">
+                            Clear Game Data
                         </button>
-                        <small class="text-muted d-block mt-1">Clears saved games and settings from browser storage</small>
+                        <small class="text-muted d-block mt-1">Clears loaded games and puzzle progress; keeps settings</small>
+                        <button class="btn btn-outline-warning btn-sm w-100 mt-2" id="resetSettingsBtn">
+                            Reset Settings
+                        </button>
+                        <small class="text-muted d-block mt-1">Resets all settings to defaults; keeps loaded games</small>
                     </div>
                 </div>
             </div>
@@ -735,15 +739,69 @@
             }
         }
 
-        // Clear saved state from localStorage
-        function clearStateFromStorage() {
+        // Clear game data but preserve settings
+        function clearGameData() {
             try {
+                var savedState = localStorage.getItem(STORAGE_KEY);
+                var settings = null;
+                var puzzleSettings = null;
+                if (savedState) {
+                    var state = JSON.parse(savedState);
+                    settings = state.settings;
+                    puzzleSettings = state.puzzle_settings;
+                }
                 localStorage.removeItem(STORAGE_KEY);
                 clearPuzzleCaches();
                 window.savedPgnString = null;
-                console.log('State cleared from localStorage');
+                // Re-save with settings preserved but game data cleared
+                if (settings || puzzleSettings) {
+                    var cleanState = {
+                        pgn_string: null,
+                        current_game_index: -1,
+                        current_ply: 0,
+                        settings: settings || {},
+                        puzzle_settings: puzzleSettings || {}
+                    };
+                    cleanState.puzzle_settings.completed_puzzles = [];
+                    cleanState.puzzle_settings.random_seed = null;
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(cleanState));
+                }
+                console.log('Game data cleared, settings preserved');
             } catch (e) {
-                console.error('Error clearing state from localStorage:', e);
+                console.error('Error clearing game data:', e);
+            }
+        }
+
+        // Reset settings to defaults but preserve game data
+        function resetSettings() {
+            try {
+                // Set UI controls to defaults
+                document.getElementById('showEvaluation').checked = true;
+                document.getElementById('showBestMoves').checked = true;
+                document.getElementById('numBestMoves').value = 3;
+                document.getElementById('numBestMovesValue').textContent = '3';
+                document.getElementById('timeLimit').value = 1.0;
+                document.getElementById('timeLimitValue').textContent = '1.0s';
+                document.getElementById('puzzleTimeLimit').value = 0.1;
+                document.getElementById('puzzleTimeLimitValue').textContent = '0.10s';
+                document.getElementById('anonymousMode').checked = false;
+                document.getElementById('hideMoveList').checked = false;
+                document.getElementById('autoAdvancePuzzle').checked = false;
+                document.getElementById('classificationMode').value = 'wdl';
+                document.getElementById('showBlunder').checked = true;
+                document.getElementById('showMistake').checked = false;
+                document.getElementById('showInaccuracy').checked = false;
+                document.getElementById('successCriterion').value = 'top3';
+                document.getElementById('puzzleSort').value = 'asc';
+                selectedPlayers.clear();
+                // Apply anonymous mode change
+                anonymousMode = false;
+                puzzleMode = false;
+                // Save the updated state
+                saveStateToStorage();
+                console.log('Settings reset to defaults');
+            } catch (e) {
+                console.error('Error resetting settings:', e);
             }
         }
 
@@ -911,10 +969,15 @@
         document.getElementById('settingsToggle').addEventListener('click', toggleSettings);
         document.getElementById('bestMovesToggle').addEventListener('click', toggleBestMoves);
         document.getElementById('puzzleToggle').addEventListener('click', togglePuzzle);
-        document.getElementById('clearStorageBtn').addEventListener('click', function() {
-            if (confirm('Are you sure you want to clear all saved data? This will reset your games and settings on the next page load.')) {
-                clearStateFromStorage();
-                alert('Saved data cleared. The page will refresh on next load with a clean state.');
+        document.getElementById('clearGameDataBtn').addEventListener('click', function() {
+            if (confirm('Clear all game data and puzzle progress? Your settings will be preserved.')) {
+                clearGameData();
+                location.reload();
+            }
+        });
+        document.getElementById('resetSettingsBtn').addEventListener('click', function() {
+            if (confirm('Reset all settings to their defaults? Your loaded games will be preserved.')) {
+                resetSettings();
             }
         });
         document.getElementById('showEvaluation').addEventListener('change', updateSettings);

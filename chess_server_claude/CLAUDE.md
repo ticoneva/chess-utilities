@@ -318,6 +318,10 @@ playwright-cli resize 375 812
 - Use inline `style.display` for toggling (not Bootstrap classes)
 - Order classes: panels should have `order-1` for mobile, board `order-3`
 
+### Board overlapping puzzle list on mobile
+- All layout columns must have `col-12` class (e.g. `col-12 col-md-3`) so they take full width on mobile and stack vertically
+- Sidebar `max-height` must be desktop-only (`@media (min-width: 768px)`) — on mobile, `max-height` with `overflow: visible` causes content to overflow and overlap the board below
+
 ### Auto-advance not following puzzle sort order
 - The frontend calculates next puzzle index from `window.allPuzzles` (sorted array)
 - Backend's `next_puzzle` response is ignored for auto-advance since it uses unsorted order

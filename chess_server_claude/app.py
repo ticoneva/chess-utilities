@@ -81,7 +81,7 @@ class GameState:
             "puzzle_mode": False,
             "success_criterion": "top3",  # top3, best, any
             "current_puzzle_index": -1,
-            "min_class": "blunder",  # inaccuracy, mistake, blunder
+            "min_class": "blunder",  # comma-separated allowed classifications
             "classification_mode": "wdl",  # eval or wdl
         }
 
@@ -383,8 +383,6 @@ class GameState:
 
     def analyze_games_async(self, min_class: str) -> Queue:
         """Analyze all games asynchronously and return a queue for progress updates."""
-        class_priority = {"blunder": 3, "mistake": 2, "inaccuracy": 1}
-        min_priority = class_priority.get(min_class, 1)
 
         # Start analysis in background thread
         self._analysis_queue = Queue()
@@ -412,8 +410,6 @@ class GameState:
 
         This clears existing analysis and runs Stockfish on all games.
         """
-        class_priority = {"blunder": 3, "mistake": 2, "inaccuracy": 1}
-        min_priority = class_priority.get(min_class, 1)
 
         # Clear existing analysis to force re-analysis
         self._game_analyzed = {}
@@ -444,14 +440,14 @@ class GameState:
         self, game_index: int, min_class: str
     ) -> List[Dict[str, Any]]:
         """Get filtered puzzles for a specific game."""
-        class_priority = {"blunder": 3, "mistake": 2, "inaccuracy": 1}
-        min_priority = class_priority.get(min_class, 1)
+        # Parse allowed classifications
+        if not min_class:
+            allowed = set()
+        else:
+            allowed = set(min_class.split(','))
 
         puzzles = self._game_puzzles.get(game_index, [])
-        return [
-            p for p in puzzles
-            if class_priority.get(p["classification"], 0) >= min_priority
-        ]
+        return [p for p in puzzles if p["classification"] in allowed]
 
     def _get_best_moves(
         self, board: chess.Board, engine: Any, time_limit
@@ -508,9 +504,16 @@ class GameState:
         return best_moves
 
     def get_filtered_puzzles(self, min_class: str) -> List[Dict[str, Any]]:
-        """Filter puzzles by minimum classification (existing analyzed games only)."""
-        class_priority = {"blunder": 3, "mistake": 2, "inaccuracy": 1}
-        min_priority = class_priority.get(min_class, 1)
+        """Filter puzzles by allowed classifications (existing analyzed games only).
+
+        min_class can be a comma-separated list of allowed classifications
+        (e.g. 'blunder,mistake,inaccuracy').
+        """
+        # Parse allowed classifications
+        if not min_class:
+            allowed = set()
+        else:
+            allowed = set(min_class.split(','))
 
         # Only return puzzles from games that have been analyzed
         all_puzzles = []
@@ -518,10 +521,7 @@ class GameState:
             if game_idx in self._game_analyzed and self._game_analyzed[game_idx]:
                 all_puzzles.extend(self._game_puzzles.get(game_idx, []))
 
-        return [
-            p for p in all_puzzles
-            if class_priority.get(p["classification"], 0) >= min_priority
-        ]
+        return [p for p in all_puzzles if p["classification"] in allowed]
 
     def analyze_position(self, fen: str) -> Dict[str, Any]:
         """Get Stockfish evaluation, WDL, and best moves for a given position."""
@@ -1061,10 +1061,13 @@ def puzzles_stream():
         return jsonify({"error": "No active session"}), 404
 
     game_state = games_db[session_id]
-    min_class = request.args.get("min_class", "inaccuracy")
+    min_class = request.args.get("min_class", "")
 
-    class_priority = {"blunder": 3, "mistake": 2, "inaccuracy": 1}
-    min_priority = class_priority.get(min_class, 1)
+    # Parse allowed classifications (only show explicitly selected types)
+    if not min_class:
+        allowed = set()
+    else:
+        allowed = set(min_class.split(','))
 
     def generate():
         # Start async analysis
@@ -1075,7 +1078,7 @@ def puzzles_stream():
             if game_idx in game_state._game_analyzed and game_state._game_analyzed[game_idx]:
                 puzzles = [
                     p for p in game_state._game_puzzles.get(game_idx, [])
-                    if class_priority.get(p["classification"], 0) >= min_priority
+                    if p["classification"] in allowed
                 ]
                 if puzzles:
                     game_name = game_state.games[game_idx]["headers"]["white"] + " vs " + game_state.games[game_idx]["headers"]["black"]
@@ -1104,7 +1107,7 @@ def puzzles_stream():
                 elif message["type"] == "game_complete":
                     puzzles = [
                         p for p in message["puzzles"]
-                        if class_priority.get(p["classification"], 0) >= min_priority
+                        if p["classification"] in allowed
                     ]
                     game_name = game_state.games[message["game_index"]]["headers"]["white"] + " vs " + game_state.games[message["game_index"]]["headers"]["black"]
                     payload = {"game_index": message["game_index"], "puzzles": puzzles, "game_name": game_name}
@@ -1146,10 +1149,13 @@ def reanalyze_stream():
         return jsonify({"error": "No active session"}), 404
 
     game_state = games_db[session_id]
-    min_class = request.args.get("min_class", "inaccuracy")
+    min_class = request.args.get("min_class", "")
 
-    class_priority = {"blunder": 3, "mistake": 2, "inaccuracy": 1}
-    min_priority = class_priority.get(min_class, 1)
+    # Parse allowed classifications (only show explicitly selected types)
+    if not min_class:
+        allowed = set()
+    else:
+        allowed = set(min_class.split(','))
 
     def generate():
         # Start async forced analysis
@@ -1174,7 +1180,7 @@ def reanalyze_stream():
                 elif message["type"] == "game_complete":
                     puzzles = [
                         p for p in message["puzzles"]
-                        if class_priority.get(p["classification"], 0) >= min_priority
+                        if p["classification"] in allowed
                     ]
                     game_name = game_state.games[message["game_index"]]["headers"]["white"] + " vs " + game_state.games[message["game_index"]]["headers"]["black"]
                     payload = {"game_index": message["game_index"], "puzzles": puzzles, "game_name": game_name}
@@ -1418,11 +1424,13 @@ def download_annotated_pgn():
         return jsonify({"error": "No active session"}), 404
 
     game_state = games_db[session_id]
-    min_class = request.args.get("min_class", "inaccuracy")
+    min_class = request.args.get("min_class", "")
 
-    # Ensure all games are analyzed
-    class_priority = {"blunder": 3, "mistake": 2, "inaccuracy": 1}
-    min_priority = class_priority.get(min_class, 1)
+    # Parse allowed classifications (only show explicitly selected types)
+    if not min_class:
+        allowed = set()
+    else:
+        allowed = set(min_class.split(','))
 
     # Build annotated PGN
     pgn_output = StringIO()
@@ -1462,7 +1470,7 @@ def download_annotated_pgn():
             if i in puzzle_by_ply:
                 puzzle = puzzle_by_ply[i]
                 classification = puzzle["classification"]
-                if class_priority.get(classification, 0) >= min_priority:
+                if classification in allowed:
                     if classification == "blunder":
                         node.nags.add(4)  # ??
                     elif classification == "mistake":
@@ -1495,7 +1503,6 @@ if __name__ == "__main__":
                         help=f"Number of Stockfish threads (default: {DEFAULT_THREADS})")
     args = parser.parse_args()
 
-    global stockfish_threads
     stockfish_threads = args.threads
 
     app.run(host="0.0.0.0", port=args.port, debug=args.debug)

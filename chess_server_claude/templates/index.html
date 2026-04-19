@@ -221,9 +221,9 @@
         <div class="row flex-column flex-md-row">
             <!-- Left Sidebar -->
             <div class="col-12 col-md-3 p-3 border-end sidebar order-1 order-md-1" id="leftSidebar" style="display: none;">
-                <!-- Games Panel (contains Load PGN and Games List) -->
+                <!-- Games Panel (tabbed: Sets + Games) -->
                 <div id="gamesPanel">
-                    <div class="mb-4">
+                    <div class="mb-3">
                         <label class="form-label">Load PGN File</label>
                         <input type="file" class="form-control mb-2" id="pgnFile" accept=".pgn">
                         <button class="btn btn-primary w-100 mb-2" id="uploadBtn">
@@ -235,9 +235,23 @@
                         </button>
                     </div>
 
-                    <div class="mb-4" id="gamesSection" style="display: none;">
-                        <label class="form-label">Games</label>
-                        <div class="list-group" id="gamesList"></div>
+                    <ul class="nav nav-tabs mb-2" id="pgnPanelTabs">
+                        <li class="nav-item">
+                            <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#setsTab">Sets</button>
+                        </li>
+                        <li class="nav-item">
+                            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#gamesTab">Games</button>
+                        </li>
+                    </ul>
+                    <div class="tab-content">
+                        <div class="tab-pane fade show active" id="setsTab">
+                            <div class="list-group" id="setsList"></div>
+                            <p class="text-muted text-center mt-2 mb-0" id="noSetsMessage">No puzzle sets loaded</p>
+                        </div>
+                        <div class="tab-pane fade" id="gamesTab">
+                            <div class="list-group" id="gamesList"></div>
+                            <p class="text-muted text-center mt-2 mb-0" id="noGamesMessage" style="display:none;">No game selected</p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -473,6 +487,10 @@
         var puzzleRandomSeed = null;
         var selectedPlayers = new Set(); // Set of selected player names for filtering
 
+        // Multi-set support
+        window.pgnSets = []; // [{ id, name, pgn, numGames }]
+        window.activeSetId = null;
+
         // Storage key for localStorage
         var STORAGE_KEY = 'chessPuzzleGeneratorState';
 
@@ -502,6 +520,125 @@
             if (document.getElementById('showMistake').checked) allowed.push('mistake');
             if (document.getElementById('showInaccuracy').checked) allowed.push('inaccuracy');
             return allowed;
+        }
+
+        // Get PGN string of the currently active set (replaces window.savedPgnString)
+        function getActivePgn() {
+            if (!window.activeSetId) return window.savedPgnString || null;
+            var set = window.pgnSets.find(function(s) { return s.id === window.activeSetId; });
+            return set ? set.pgn : (window.savedPgnString || null);
+        }
+
+        // Derive a set name from PGN headers or filename
+        function deriveSetName(pgn, filename) {
+            // Try to extract Event header
+            var match = pgn.match(/\[Event\s+"([^"]*)"\]/);
+            if (match && match[1]) return match[1];
+            if (filename) return filename.replace(/\.pgn$/i, '');
+            return 'PGN Set';
+        }
+
+        // Render the list of sets in the Sets tab
+        function renderSetsList() {
+            var setsList = document.getElementById('setsList');
+            var noSetsMsg = document.getElementById('noSetsMessage');
+            setsList.innerHTML = '';
+            if (window.pgnSets.length === 0) {
+                noSetsMsg.style.display = 'block';
+                return;
+            }
+            noSetsMsg.style.display = 'none';
+            window.pgnSets.forEach(function(set) {
+                var isActive = set.id === window.activeSetId;
+                var item = document.createElement('div');
+                item.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center' + (isActive ? ' active' : '');
+                item.innerHTML =
+                    '<div class="flex-grow-1 set-name-area" style="cursor:pointer;" data-set-id="' + set.id + '">' +
+                        '<strong>' + set.name + '</strong>' +
+                        '<br><small class="text-muted">' + set.numGames + ' game' + (set.numGames !== 1 ? 's' : '') + '</small>' +
+                    '</div>' +
+                    '<button class="btn btn-sm btn-outline-danger ms-2 delete-set-btn" data-set-id="' + set.id + '" title="Delete set">&times;</button>';
+                setsList.appendChild(item);
+            });
+            // Bind click handlers
+            setsList.querySelectorAll('.set-name-area').forEach(function(el) {
+                el.addEventListener('click', function() {
+                    activateSet(this.dataset.setId);
+                });
+            });
+            setsList.querySelectorAll('.delete-set-btn').forEach(function(el) {
+                el.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    deleteSet(this.dataset.setId);
+                });
+            });
+        }
+
+        // Activate a set: restore it on the server and load its games
+        async function activateSet(setId) {
+            var set = window.pgnSets.find(function(s) { return s.id === setId; });
+            if (!set) return;
+            window.activeSetId = setId;
+            window.savedPgnString = set.pgn;
+            renderSetsList();
+
+            // Restore the session on the server
+            try {
+                var response = await fetch('restore_session', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ pgn_string: set.pgn })
+                });
+                if (!response.ok) {
+                    console.error('Failed to restore session for set:', set.name);
+                    return;
+                }
+                var data = await response.json();
+                // Switch to Games tab and load games
+                var gamesTabBtn = document.querySelector('#pgnPanelTabs button[data-bs-target="#gamesTab"]');
+                if (gamesTabBtn) gamesTabBtn.click();
+                loadGamesList(data.num_games || set.numGames);
+            } catch (error) {
+                console.error('Error activating set:', error);
+            }
+            saveStateToStorage();
+        }
+
+        // Delete a set
+        function deleteSet(setId) {
+            var set = window.pgnSets.find(function(s) { return s.id === setId; });
+            if (!set) return;
+            if (!confirm('Delete set "' + set.name + '"?')) return;
+
+            // Remove from array
+            window.pgnSets = window.pgnSets.filter(function(s) { return s.id !== setId; });
+
+            // Clear puzzle caches for this set's PGN
+            var minClasses = ['blunder', 'mistake,inaccuracy,blunder', 'inaccuracy,mistake,blunder'];
+            minClasses.forEach(function(mc) {
+                try {
+                    var hash = hashPGN(set.pgn);
+                    var cacheKey = PUZZLE_CACHE_PREFIX + hash + '_' + mc;
+                    localStorage.removeItem(cacheKey);
+                } catch(e) {}
+            });
+
+            // If the deleted set was active, activate another or clear
+            if (window.activeSetId === setId) {
+                window.activeSetId = null;
+                window.savedPgnString = null;
+                if (window.pgnSets.length > 0) {
+                    activateSet(window.pgnSets[0].id);
+                } else {
+                    // No sets left — clear the board
+                    document.getElementById('gamesList').innerHTML = '';
+                    document.getElementById('noGamesMessage').style.display = 'block';
+                    var setsTabBtn = document.querySelector('#pgnPanelTabs button[data-bs-target="#setsTab"]');
+                    if (setsTabBtn) setsTabBtn.click();
+                }
+            }
+            renderSetsList();
+            saveStateToStorage();
         }
 
         // Save puzzle analysis results to cache
@@ -569,7 +706,9 @@
         function saveStateToStorage() {
             try {
                 var state = {
-                    pgn_string: window.savedPgnString || null,
+                    pgn_string: getActivePgn(),
+                    pgn_sets: window.pgnSets,
+                    active_set_id: window.activeSetId,
                     current_game_index: currentGameIndex,
                     current_ply: currentPly,
                     settings: {
@@ -596,8 +735,8 @@
                     }
                 };
 
-                // Only save if we have a PGN
-                if (state.pgn_string) {
+                // Save if we have a PGN or any sets
+                if (state.pgn_string || (window.pgnSets && window.pgnSets.length > 0)) {
                     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
                     console.log('State saved to localStorage');
                 }
@@ -617,9 +756,29 @@
 
                 var state = JSON.parse(savedState);
 
-                // Check if we have a PGN to restore
-                if (!state.pgn_string) {
-                    console.log('No PGN in saved state');
+                // Restore pgnSets and activeSetId
+                if (state.pgn_sets && state.pgn_sets.length > 0) {
+                    window.pgnSets = state.pgn_sets;
+                    window.activeSetId = state.active_set_id || window.pgnSets[0].id;
+                } else if (state.pgn_string) {
+                    // Migrate old single-PGN format to pgnSets
+                    var setId = 'set_' + Date.now();
+                    var setName = deriveSetName(state.pgn_string, null);
+                    // Count games from PGN
+                    var gameCount = (state.pgn_string.match(/\[Event\s/g) || []).length || 1;
+                    window.pgnSets = [{ id: setId, name: setName, pgn: state.pgn_string, numGames: gameCount }];
+                    window.activeSetId = setId;
+                } else {
+                    console.log('No PGN or sets in saved state');
+                    return false;
+                }
+
+                renderSetsList();
+
+                // Get active PGN for server restore
+                var activePgn = getActivePgn();
+                if (!activePgn) {
+                    console.log('No active PGN to restore');
                     return false;
                 }
 
@@ -643,7 +802,7 @@
                 console.log('Session restored:', data);
 
                 // Store the PGN string for future saves
-                window.savedPgnString = state.pgn_string;
+                window.savedPgnString = activePgn;
 
                 // Restore settings UI
                 document.getElementById('showEvaluation').checked = state.settings.show_evaluation;
@@ -753,10 +912,15 @@
                 localStorage.removeItem(STORAGE_KEY);
                 clearPuzzleCaches();
                 window.savedPgnString = null;
+                window.pgnSets = [];
+                window.activeSetId = null;
+                renderSetsList();
                 // Re-save with settings preserved but game data cleared
                 if (settings || puzzleSettings) {
                     var cleanState = {
                         pgn_string: null,
+                        pgn_sets: [],
+                        active_set_id: null,
                         current_game_index: -1,
                         current_ply: 0,
                         settings: settings || {},
@@ -1149,8 +1313,17 @@
                     // Read the file content for storage
                     const reader = new FileReader();
                     reader.onload = function(e) {
-                        window.savedPgnString = e.target.result;
+                        var pgnString = e.target.result;
+                        var setId = 'set_' + Date.now();
+                        var setName = deriveSetName(pgnString, file.name);
+                        window.pgnSets.push({ id: setId, name: setName, pgn: pgnString, numGames: data.num_games });
+                        window.activeSetId = setId;
+                        window.savedPgnString = pgnString;
+                        renderSetsList();
                         saveStateToStorage();
+                        // Switch to Games tab
+                        var gamesTabBtn = document.querySelector('#pgnPanelTabs button[data-bs-target="#gamesTab"]');
+                        if (gamesTabBtn) gamesTabBtn.click();
                     };
                     reader.readAsText(file);
                     loadGamesList(data.num_games);
@@ -1170,8 +1343,17 @@
                     // Fetch the sample.pgn content for storage
                     const pgnResponse = await fetch('sample.pgn');
                     if (pgnResponse.ok) {
-                        window.savedPgnString = await pgnResponse.text();
+                        var pgnString = await pgnResponse.text();
+                        var setId = 'set_' + Date.now();
+                        var setName = deriveSetName(pgnString, 'sample.pgn');
+                        window.pgnSets.push({ id: setId, name: setName, pgn: pgnString, numGames: data.num_games });
+                        window.activeSetId = setId;
+                        window.savedPgnString = pgnString;
+                        renderSetsList();
                         saveStateToStorage();
+                        // Switch to Games tab
+                        var gamesTabBtn = document.querySelector('#pgnPanelTabs button[data-bs-target="#gamesTab"]');
+                        if (gamesTabBtn) gamesTabBtn.click();
                     }
                     loadGamesList(data.num_games);
                 } else {
@@ -1183,9 +1365,9 @@
         }
 
         function loadGamesList(numGames) {
-            document.getElementById('gamesSection').style.display = 'block';
             const gamesList = document.getElementById('gamesList');
             gamesList.innerHTML = '';
+            document.getElementById('noGamesMessage').style.display = 'none';
 
             // Load puzzles automatically since puzzles is the default tab
             loadPuzzles();
@@ -2106,8 +2288,8 @@
                     const data = JSON.parse(e.data);
                     eventSource.close();
                     // Cache the puzzle analysis results
-                    if (window.savedPgnString && window.gamesWithPuzzles) {
-                        savePuzzleCache(window.savedPgnString, minClass, window.gamesWithPuzzles);
+                    if (getActivePgn() && window.gamesWithPuzzles) {
+                        savePuzzleCache(getActivePgn(), minClass, window.gamesWithPuzzles);
                     }
                     finalizePuzzleList(data.total_games);
                     saveStateToStorage();
@@ -2117,8 +2299,8 @@
                     console.error('Reanalyze SSE error:', e);
                     eventSource.close();
                     // Cache the puzzle analysis results
-                    if (window.savedPgnString && window.gamesWithPuzzles) {
-                        savePuzzleCache(window.savedPgnString, minClass, window.gamesWithPuzzles);
+                    if (getActivePgn() && window.gamesWithPuzzles) {
+                        savePuzzleCache(getActivePgn(), minClass, window.gamesWithPuzzles);
                     }
                 };
 
@@ -2147,8 +2329,9 @@
             document.getElementById('puzzleSettings').style.display = 'block';
 
             // Check for cached puzzle analysis
-            if (window.savedPgnString) {
-                const cachedPuzzles = loadPuzzleCache(window.savedPgnString, minClass);
+            var activePgn = getActivePgn();
+            if (activePgn) {
+                const cachedPuzzles = loadPuzzleCache(activePgn, minClass);
                 if (cachedPuzzles) {
                     console.log('Using cached puzzle analysis');
                     window.gamesWithPuzzles = cachedPuzzles;
@@ -2210,8 +2393,8 @@
                     const data = JSON.parse(e.data);
                     eventSource.close();
                     // Cache the puzzle analysis results
-                    if (window.savedPgnString && window.gamesWithPuzzles) {
-                        savePuzzleCache(window.savedPgnString, minClass, window.gamesWithPuzzles);
+                    if (getActivePgn() && window.gamesWithPuzzles) {
+                        savePuzzleCache(getActivePgn(), minClass, window.gamesWithPuzzles);
                     }
                     finalizePuzzleList(data.total_games);
                 });
@@ -2220,8 +2403,8 @@
                     console.error('SSE error:', e);
                     eventSource.close();
                     // Cache the puzzle analysis results
-                    if (window.savedPgnString && window.gamesWithPuzzles) {
-                        savePuzzleCache(window.savedPgnString, minClass, window.gamesWithPuzzles);
+                    if (getActivePgn() && window.gamesWithPuzzles) {
+                        savePuzzleCache(getActivePgn(), minClass, window.gamesWithPuzzles);
                     }
                     // Fallback to regular fetch
                     fallbackLoadPuzzles(minClass);

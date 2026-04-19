@@ -594,9 +594,6 @@
                     return;
                 }
                 var data = await response.json();
-                // Switch to Games tab and load games
-                var gamesTabBtn = document.querySelector('#pgnPanelTabs button[data-bs-target="#gamesTab"]');
-                if (gamesTabBtn) gamesTabBtn.click();
                 loadGamesList(data.num_games || set.numGames);
             } catch (error) {
                 console.error('Error activating set:', error);

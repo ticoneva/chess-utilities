@@ -4,6 +4,7 @@ A web interface for viewing PGN files with puzzle mode for practicing blunders, 
 """
 
 import argparse
+import hashlib
 import json
 import os
 from datetime import datetime
@@ -44,6 +45,9 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 # In-memory session storage
 games_db: Dict[str, "GameState"] = {}
+
+# Remote puzzle sets: hash -> filepath
+remote_sets: Dict[str, str] = {}
 
 
 class GameState:
@@ -737,10 +741,122 @@ class GameState:
 # Flask Routes
 
 
+def scan_pgn_dir():
+    """Scan PGN directory and build hash -> filepath mapping."""
+    global remote_sets
+    remote_sets = {}
+    pgn_dir = app.config.get("PGN_DIR")
+    if not pgn_dir or not os.path.isdir(pgn_dir):
+        return
+    for fname in sorted(os.listdir(pgn_dir)):
+        if fname.lower().endswith('.pgn'):
+            h = hashlib.sha256(fname.encode()).hexdigest()[:8]
+            remote_sets[h] = os.path.join(pgn_dir, fname)
+
+
 @app.route("/")
 def index():
     """Render main page."""
     return render_template("index.html")
+
+
+@app.route("/remote_set/<set_hash>")
+def remote_set(set_hash):
+    """Serve a PGN file from the remote sets by its hash."""
+    filepath = remote_sets.get(set_hash)
+    if not filepath or not os.path.exists(filepath):
+        return jsonify({"error": "Set not found"}), 404
+    try:
+        with open(filepath, "r") as f:
+            pgn_string = f.read()
+        return Response(pgn_string, mimetype="application/x-chess-pgn")
+    except Exception as e:
+        return jsonify({"error": f"Failed to read set: {e}"}), 400
+
+
+@app.route("/list_remote_sets")
+def list_remote_sets():
+    """List all available remote puzzle sets."""
+    sets = []
+    for h, filepath in sorted(remote_sets.items()):
+        fname = os.path.basename(filepath)
+        name = os.path.splitext(fname)[0]
+        num_games = 0
+        try:
+            with open(filepath, "r") as f:
+                content = f.read()
+                num_games = len(content.split('[Event ')) - 1 or 1
+        except:
+            pass
+        sets.append({
+            "hash": h,
+            "name": name,
+            "filename": fname,
+            "num_games": num_games,
+        })
+    return jsonify(sets)
+
+
+@app.route("/rescan_sets", methods=["POST"])
+def rescan_sets():
+    """Re-scan PGN directory for new files."""
+    scan_pgn_dir()
+    return jsonify({"success": True, "count": len(remote_sets)})
+
+
+@app.route("/admin")
+def admin_page():
+    """Render admin upload page."""
+    return render_template("admin.html")
+
+
+@app.route("/admin_upload_set", methods=["POST"])
+def admin_upload_set():
+    """Upload a PGN file to the remote sets directory (password-protected)."""
+    admin_password = os.environ.get("CHESS_ADMIN_PASSWORD", "")
+    if not admin_password:
+        return jsonify({"error": "Admin uploads not configured (CHESS_ADMIN_PASSWORD not set)"}), 403
+
+    provided = request.form.get("password", "")
+    if provided != admin_password:
+        return jsonify({"error": "Invalid password"}), 403
+
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"error": "No file selected"}), 400
+
+    if not file.filename.lower().endswith(".pgn"):
+        return jsonify({"error": "Only .pgn files are allowed"}), 400
+
+    pgn_dir = app.config.get("PGN_DIR")
+    if not pgn_dir:
+        return jsonify({"error": "PGN directory not configured"}), 500
+
+    os.makedirs(pgn_dir, exist_ok=True)
+
+    # Sanitize filename
+    safe_name = os.path.basename(file.filename)
+    save_path = os.path.join(pgn_dir, safe_name)
+
+    try:
+        file.save(save_path)
+    except Exception as e:
+        return jsonify({"error": f"Failed to save file: {e}"}), 400
+
+    # Re-scan to register the new file
+    scan_pgn_dir()
+
+    # Compute hash for the uploaded file
+    h = hashlib.sha256(safe_name.encode()).hexdigest()[:8]
+
+    return jsonify({
+        "success": True,
+        "hash": h,
+        "filename": safe_name,
+    })
 
 
 @app.route("/upload_pgn", methods=["POST"])
@@ -1501,8 +1617,16 @@ if __name__ == "__main__":
                         help="Run in debug mode")
     parser.add_argument("--threads", type=int, default=DEFAULT_THREADS,
                         help=f"Number of Stockfish threads (default: {DEFAULT_THREADS})")
+    parser.add_argument("--pgn-dir", type=str,
+                        default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "pgn"),
+                        help="Directory containing PGN files for remote sets")
     args = parser.parse_args()
 
     stockfish_threads = args.threads
+    app.config["PGN_DIR"] = args.pgn_dir
+
+    # Scan PGN directory for remote sets
+    os.makedirs(args.pgn_dir, exist_ok=True)
+    scan_pgn_dir()
 
     app.run(host="0.0.0.0", port=args.port, debug=args.debug)

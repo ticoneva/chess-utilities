@@ -638,7 +638,44 @@
             saveStateToStorage();
         }
 
-        // Save puzzle analysis results to cache
+        // Load a remote set by hash
+        function loadRemoteSet(hash) {
+            fetch('/remote_set/' + hash)
+                .then(function(r) {
+                    if (!r.ok) throw new Error('Not found');
+                    return r.text();
+                })
+                .then(function(pgn) {
+                    var name = 'Remote: ' + hash;
+                    var eventMatch = pgn.match(/\[Event\s+"([^"]+)"\]/);
+                    if (eventMatch && eventMatch[1] !== '?') name = eventMatch[1];
+                    var numGames = (pgn.match(/\[Event\s/g) || []).length || 1;
+                    var newSet = { id: 'remote_' + hash, name: name, pgn: pgn, numGames: numGames };
+                    var existing = window.pgnSets.find(function(s) { return s.id === newSet.id; });
+                    if (existing) {
+                        activateSet(existing.id);
+                    } else {
+                        window.pgnSets.push(newSet);
+                        activateSet(newSet.id);
+                    }
+                    renderSetsList();
+                    saveStateToStorage();
+                })
+                .catch(function(err) {
+                    console.error('Failed to load remote set:', err);
+                });
+        }
+
+        // Check URL hash for remote set loading
+        function checkUrlHash() {
+            var hash = window.location.hash;
+            if (hash && hash.startsWith('#set=')) {
+                var setId = hash.substring(5);
+                loadRemoteSet(setId);
+                // Clear hash so it doesn't re-trigger on refresh
+                history.replaceState(null, '', window.location.pathname + window.location.search);
+            }
+        }
         function savePuzzleCache(pgnString, minClass, gamesWithPuzzles) {
             try {
                 const hash = hashPGN(pgnString);
@@ -969,6 +1006,7 @@
         // Attempt to restore state on page load
         document.addEventListener('DOMContentLoaded', function() {
             loadStateFromStorage();
+            checkUrlHash();
         });
 
         // Flag to prevent auto-navigation during state restoration

@@ -10,7 +10,9 @@ A Flask web application for viewing PGN chess games and practicing puzzles based
 chess_server_claude/
 ├── app.py                 # Flask backend with GameState class and API endpoints
 ├── templates/
-│   └── index.html        # Single-page frontend (HTML + embedded JavaScript + CSS)
+│   ├── index.html        # Single-page frontend (HTML + embedded JavaScript + CSS)
+│   └── admin.html        # Admin page for uploading remote puzzle sets
+├── pgn/                   # Default directory for remote puzzle set PGN files
 ├── requirements.txt      # Python dependencies
 └── CLAUDE.md            # This documentation
 ```
@@ -32,7 +34,18 @@ chess_server_claude/
 cd chess_server_claude
 python app.py              # Default port 5001
 python app.py --port 8080  # Custom port
+python app.py --pgn-dir /path/to/pgns  # Custom PGN directory for remote sets
 ```
+
+### Admin Password
+
+To enable PGN uploads via the admin page, set the `CHESS_ADMIN_PASSWORD` environment variable:
+
+```bash
+CHESS_ADMIN_PASSWORD=your_secret python app.py
+```
+
+Without this variable, the admin upload endpoint will reject all uploads.
 
 ## Core Constants
 
@@ -134,6 +147,11 @@ Manages session state, PGN parsing, and puzzle analysis.
 | `/goto_puzzle` | POST | Navigate to puzzle position |
 | `/restore_session` | POST | Restore session from saved PGN |
 | `/download_annotated_pgn` | GET | Download PGN with engine annotations |
+| `/remote_set/<hash>` | GET | Serve PGN file by hash from remote sets |
+| `/list_remote_sets` | GET | List all available remote puzzle sets |
+| `/rescan_sets` | POST | Re-scan PGN directory for new files |
+| `/admin` | GET | Render admin upload page |
+| `/admin_upload_set` | POST | Upload PGN to remote sets (password-protected) |
 
 #### Server-Sent Events (SSE)
 
@@ -159,6 +177,8 @@ var autoAdvancePuzzle = false;  // Auto-advance after correct answer
 var selectedPlayers = new Set();  // Player filter
 var completedPuzzles = new Set();  // Track completed puzzles
 var puzzleRandomSeed = null;  // Seed for random puzzle order
+window.pgnSets = [];       // [{ id, name, pgn, numGames }] - all loaded puzzle sets
+window.activeSetId = null;  // ID of the currently active set
 ```
 
 #### Key Functions
@@ -170,12 +190,18 @@ var puzzleRandomSeed = null;  // Seed for random puzzle order
 - `saveStateToStorage()`: Save state to localStorage
 - `loadStateFromStorage()`: Restore state from localStorage
 - `runBackgroundAnalysis()`: Run server analysis in background for cached puzzles
+- `activateSet(setId)`: Activate a puzzle set, restore server session
+- `deleteSet(setId)`: Delete a puzzle set with confirmation
+- `renderSetsList()`: Render the Sets tab list UI
+- `loadRemoteSet(hash)`: Load a remote set from server by hash
+- `checkUrlHash()`: Check URL for `#set=<hash>` and auto-load remote set
 
 #### State Persistence
 State is saved to localStorage with key `chessPuzzleGeneratorState`:
 ```javascript
 {
-    pgn_string: string,
+    pgn_sets: [{ id: string, name: string, pgn: string, numGames: number }],
+    active_set_id: string | null,
     current_game_index: number,
     current_ply: number,
     settings: {
@@ -202,6 +228,8 @@ State is saved to localStorage with key `chessPuzzleGeneratorState`:
     }
 }
 ```
+
+Old single-PGN format (`pgn_string`) is automatically migrated to `pgn_sets` on load.
 
 #### Puzzle Cache
 Analysis results are cached separately with key `chessPuzzleCache_<hash>_<minClass>`:
@@ -283,6 +311,27 @@ When enabled:
 - Puzzles show "Puzzle X" and "Move N" format
 - Downloaded PGN has anonymized headers
 
+## Remote Puzzle Sets
+
+Remote sets are PGN files stored on the server in a configurable directory (default: `pgn/`). They are accessible via URL hash links only — no listing is shown on the main page.
+
+### How It Works
+- Hash = first 8 hex characters of SHA-256 of the filename (deterministic, no database)
+- On server startup, `scan_pgn_dir()` builds the `hash → filepath` mapping in memory
+- Users load a set by visiting `http://host:port/#set=<hash>`
+- The hash is cleared from the URL after loading so refresh doesn't re-trigger
+
+### Adding New Sets
+Two methods:
+
+1. **Manual placement + re-scan**: Place a `.pgn` file in the PGN directory, then call `POST /rescan_sets` or click "Re-scan" on the admin page
+2. **Admin upload page**: Visit `/admin`, enter the admin password, and upload a PGN file. Requires `CHESS_ADMIN_PASSWORD` environment variable to be set.
+
+### Admin Page (`/admin`)
+- Password-protected PGN upload form
+- Re-scan button for manually placed files
+- Table of existing remote sets with hashes and shareable links
+
 ## Testing with Playwright
 
 ```bash
@@ -329,11 +378,9 @@ playwright-cli resize 375 812
 
 ## Recent Changes (Git History)
 
-- `0808635` - Fix auto-advance puzzle order to respect sort settings
-- `c922a4a` - Save and restore puzzle panel visibility state
-- `b123a14` - Change completed puzzle background to light grey
-- `19bcd27` - Fix puzzle completion: remove duplicate goToPuzzle and update UI
-- `036b828` - Run background analysis when using cached puzzle results
-- `0cf1fa9` - Cache puzzle analysis results to avoid re-analysis on page reload
-- `73b7337` - Add margin between Show Answer and Reset Progress buttons
-- `a6cf5e3` - Style completed puzzles with pale grey font color
+- Remote puzzle sets: load sets from server via `#set=<hash>` URL, admin upload page at `/admin`
+- Multiple puzzle sets with tabbed Sets/Games interface
+- Fix auto-advance puzzle order to respect sort settings
+- Save and restore puzzle panel visibility state
+- Fix chessboard overlapping puzzle list on mobile
+- Cache puzzle analysis results to avoid re-analysis on page reload

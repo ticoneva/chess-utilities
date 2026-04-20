@@ -80,6 +80,9 @@
             color: #999 !important;
             background-color: #f0f0f0 !important;
         }
+        .puzzle-completed.current-puzzle {
+            background-color: #d4edda !important;
+        }
         .move-list {
             font-family: monospace;
         }
@@ -1130,8 +1133,8 @@
                 document.getElementById('moveListSection').style.display = hideMoveList ? 'none' : 'block';
             } else {
                 bestMovesSidebar.style.display = 'none';
-                // Switch back to puzzle mode if puzzle panel is visible
-                if (document.getElementById('rightSidebar').style.display !== 'none') {
+                // Switch back to puzzle mode if puzzles are loaded
+                if (window.allPuzzles && window.allPuzzles.length > 0) {
                     puzzleMode = true;
                     document.getElementById('moveNavigation').style.display = 'none';
                     document.getElementById('puzzleNavigation').style.display = 'flex';
@@ -1147,8 +1150,18 @@
             // Toggle puzzle sidebar
             if (rightSidebar.style.display === 'none' || rightSidebar.style.display === '') {
                 rightSidebar.style.display = 'block';
+                // Enable puzzle mode and show puzzle navigation
+                puzzleMode = true;
+                document.getElementById('moveNavigation').style.display = 'none';
+                document.getElementById('puzzleNavigation').style.display = 'flex';
+                document.getElementById('moveListSection').style.display = 'none';
             } else {
                 rightSidebar.style.display = 'none';
+                // Disable puzzle mode and switch to move navigation
+                puzzleMode = false;
+                document.getElementById('moveNavigation').style.display = 'flex';
+                document.getElementById('puzzleNavigation').style.display = 'none';
+                document.getElementById('moveListSection').style.display = hideMoveList ? 'none' : 'block';
             }
             saveStateToStorage();
             updatePanelToggleIcons();

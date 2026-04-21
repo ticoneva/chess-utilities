@@ -1157,11 +1157,20 @@
                 document.getElementById('moveListSection').style.display = 'none';
             } else {
                 rightSidebar.style.display = 'none';
-                // Disable puzzle mode and switch to move navigation
-                puzzleMode = false;
-                document.getElementById('moveNavigation').style.display = 'flex';
-                document.getElementById('puzzleNavigation').style.display = 'none';
-                document.getElementById('moveListSection').style.display = hideMoveList ? 'none' : 'block';
+                // Keep puzzle mode active if puzzles are loaded
+                if (window.allPuzzles && window.allPuzzles.length > 0) {
+                    // Just hide the panel, keep puzzle navigation
+                    puzzleMode = true;
+                    document.getElementById('moveNavigation').style.display = 'none';
+                    document.getElementById('puzzleNavigation').style.display = 'flex';
+                    document.getElementById('moveListSection').style.display = 'none';
+                } else {
+                    // No puzzles loaded, switch to move navigation
+                    puzzleMode = false;
+                    document.getElementById('moveNavigation').style.display = 'flex';
+                    document.getElementById('puzzleNavigation').style.display = 'none';
+                    document.getElementById('moveListSection').style.display = hideMoveList ? 'none' : 'block';
+                }
             }
             saveStateToStorage();
             updatePanelToggleIcons();

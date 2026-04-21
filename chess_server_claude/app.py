@@ -948,9 +948,13 @@ def admin_upload_set():
 
     os.makedirs(pgn_dir, exist_ok=True)
 
-    # Sanitize filename
+    # Sanitize filename (basename strips directory components like ../)
     safe_name = os.path.basename(file.filename)
     save_path = os.path.join(pgn_dir, safe_name)
+
+    # Verify the resolved path stays inside the PGN directory
+    if not os.path.realpath(save_path).startswith(os.path.realpath(pgn_dir) + os.sep):
+        return jsonify({"error": "Invalid filename"}), 400
 
     try:
         file.save(save_path)

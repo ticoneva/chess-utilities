@@ -132,8 +132,9 @@
             badge.className = 'badge bg-danger annotation-badge';
             badge.textContent = 'Error';
         } else {
-            badge.className = 'badge bg-secondary annotation-badge';
-            badge.textContent = 'Unknown';
+            // unknown or no status (manually placed files)
+            badge.className = 'badge bg-light text-dark annotation-badge';
+            badge.textContent = '—';
         }
     }
 
@@ -168,7 +169,7 @@
                     '</tr></thead><tbody>';
                 sets.forEach(function(s) {
                     var link = window.location.origin + window.location.pathname.replace(/\/admin$/, '') + '/#set=' + s.hash;
-                    var statusBadge = '<span class="badge bg-secondary annotation-badge" id="status-' + s.hash + '">Checking...</span>';
+                    var statusBadge = '<span class="badge bg-light text-dark annotation-badge" id="status-' + s.hash + '">—</span>';
                     html += '<tr>' +
                         '<td>' + s.name + '</td>' +
                         '<td><span class="hash-code">' + s.hash + '</span></td>' +

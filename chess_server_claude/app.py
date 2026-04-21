@@ -28,6 +28,12 @@ DEFAULT_THREADS = 4
 # Global Stockfish thread count (set via --threads CLI option)
 stockfish_threads = DEFAULT_THREADS
 
+# Background annotation thread count (set via --annotate-threads CLI option)
+annotate_threads = 1
+
+# Annotation status tracking: hash -> {status, progress, total, message}
+annotation_status: Dict[str, Dict] = {}
+
 # Classification thresholds (centipawns)
 BLUNDER_THRESHOLD = 300
 MISTAKE_THRESHOLD = 100
@@ -754,6 +760,105 @@ def scan_pgn_dir():
             remote_sets[h] = os.path.join(pgn_dir, fname)
 
 
+def annotate_pgn_file(filepath: str, file_hash: str) -> None:
+    """Annotate a PGN file with blunder/mistake/inaccuracy NAGs using Stockfish."""
+    import tempfile
+
+    try:
+        annotation_status[file_hash] = {"status": "annotating", "progress": 0, "total": 0, "message": "Reading PGN..."}
+
+        with open(filepath, "r") as f:
+            pgn_text = f.read()
+
+        games = []
+        pgn_io = StringIO(pgn_text)
+        while True:
+            game = chess.pgn.read_game(pgn_io)
+            if game is None:
+                break
+            games.append(game)
+
+        annotation_status[file_hash]["total"] = len(games)
+
+        with chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH) as engine:
+            engine.configure({"Skill Level": 20, "Threads": annotate_threads})
+            time_limit = chess.engine.Limit(time=0.5)
+
+            for game_idx, game in enumerate(games):
+                annotation_status[file_hash]["progress"] = game_idx
+                annotation_status[file_hash]["message"] = f"Annotating game {game_idx + 1}/{len(games)}"
+
+                # Check if this game already has annotations
+                has_annotations = False
+                node = game
+                while node.variations:
+                    node = node.variations[0]
+                    if node.nags & {2, 4, 6}:
+                        has_annotations = True
+                        break
+
+                if has_annotations:
+                    continue
+
+                # Run Stockfish analysis on each move
+                board = game.board()
+                node = game
+
+                while node.variations:
+                    next_node = node.variations[0]
+                    move = next_node.move
+
+                    # Analyze position before move
+                    info = engine.analyse(board, time_limit)
+                    score = info.get("score")
+                    before_cp = score.white().score(mate_score=10000) if score else 0
+
+                    board.push(move)
+
+                    # Analyze position after move
+                    info = engine.analyse(board, time_limit)
+                    score = info.get("score")
+                    after_cp = score.white().score(mate_score=10000) if score else 0
+
+                    # Calculate eval change (centipawns)
+                    move_ply = board.ply() - 1
+                    if move_ply % 2 == 0:  # White's move
+                        eval_change = before_cp - after_cp
+                    else:  # Black's move
+                        eval_change = after_cp - before_cp
+
+                    # Classify and add NAG
+                    if eval_change >= BLUNDER_THRESHOLD:
+                        next_node.nags.add(4)  # ??
+                    elif eval_change >= MISTAKE_THRESHOLD:
+                        next_node.nags.add(2)  # ?
+                    elif eval_change >= INACCURACY_THRESHOLD:
+                        next_node.nags.add(6)  # ?!
+
+                    node = next_node
+
+        # Write annotated PGN back (atomic)
+        output = StringIO()
+        for game in games:
+            output.write(str(game))
+            output.write("\n\n")
+
+        tmp_fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(filepath), suffix=".pgn")
+        try:
+            with os.fdopen(tmp_fd, "w") as tmp_f:
+                tmp_f.write(output.getvalue())
+            os.replace(tmp_path, filepath)
+        except:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            raise
+
+        annotation_status[file_hash] = {"status": "complete", "progress": len(games), "total": len(games), "message": "Annotation complete"}
+
+    except Exception as e:
+        annotation_status[file_hash] = {"status": "error", "progress": 0, "total": 0, "message": str(e)}
+
+
 @app.route("/")
 def index():
     """Render main page."""
@@ -804,6 +909,12 @@ def rescan_sets():
     return jsonify({"success": True, "count": len(remote_sets)})
 
 
+@app.route("/annotation_status/<set_hash>")
+def get_annotation_status(set_hash):
+    """Get annotation status for a remote set."""
+    return jsonify(annotation_status.get(set_hash, {"status": "unknown"}))
+
+
 @app.route("/admin")
 def admin_page():
     """Render admin upload page."""
@@ -851,6 +962,15 @@ def admin_upload_set():
 
     # Compute hash for the uploaded file
     h = hashlib.sha256(safe_name.encode()).hexdigest()[:8]
+
+    # Start background annotation
+    annotation_status[h] = {"status": "pending", "progress": 0, "total": 0, "message": "Queued for annotation"}
+
+    def run_annotation():
+        annotate_pgn_file(save_path, h)
+
+    t = Thread(target=run_annotation, daemon=True)
+    t.start()
 
     return jsonify({
         "success": True,
@@ -1609,6 +1729,27 @@ def download_annotated_pgn():
     )
 
 
+def init_app(threads=None, annotate_threads_arg=None, pgn_dir=None):
+    """Initialize app configuration from explicit args or environment variables.
+
+    Called automatically on module import. When using waitress or other WSGI
+    servers, set environment variables instead of CLI args:
+        THREADS=4 ANNOTATE_THREADS=1 PGN_DIR=/path/to/pgn
+    """
+    global stockfish_threads, annotate_threads
+    stockfish_threads = threads or int(os.environ.get("THREADS", DEFAULT_THREADS))
+    annotate_threads = annotate_threads_arg or int(os.environ.get("ANNOTATE_THREADS", 1))
+    pgn_dir = pgn_dir or os.environ.get("PGN_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "pgn"))
+    app.config["PGN_DIR"] = pgn_dir
+
+    # Scan PGN directory for remote sets
+    os.makedirs(pgn_dir, exist_ok=True)
+    scan_pgn_dir()
+
+
+init_app()
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Chess Puzzle Generator Server")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT,
@@ -1617,16 +1758,14 @@ if __name__ == "__main__":
                         help="Run in debug mode")
     parser.add_argument("--threads", type=int, default=DEFAULT_THREADS,
                         help=f"Number of Stockfish threads (default: {DEFAULT_THREADS})")
+    parser.add_argument("--annotate-threads", type=int, default=1,
+                        help="Number of Stockfish threads for background annotation (default: 1)")
     parser.add_argument("--pgn-dir", type=str,
                         default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "pgn"),
                         help="Directory containing PGN files for remote sets")
     args = parser.parse_args()
 
-    stockfish_threads = args.threads
-    app.config["PGN_DIR"] = args.pgn_dir
-
-    # Scan PGN directory for remote sets
-    os.makedirs(args.pgn_dir, exist_ok=True)
-    scan_pgn_dir()
+    # Re-initialize with CLI args (override env vars)
+    init_app(threads=args.threads, annotate_threads_arg=args.annotate_threads, pgn_dir=args.pgn_dir)
 
     app.run(host="0.0.0.0", port=args.port, debug=args.debug)

@@ -45,6 +45,7 @@ Open `http://localhost:5001` in your browser.
 | `--port` | 5001 | Server port |
 | `--debug` | off | Enable Flask debug mode |
 | `--threads` | 4 | Stockfish analysis threads |
+| `--annotate-threads` | 1 | Stockfish threads for background PGN annotation |
 | `--pgn-dir` | `./pgn` | Directory for remote puzzle set PGN files |
 
 ## Usage
@@ -72,6 +73,15 @@ Remote sets are PGN files stored in the server's `pgn/` directory. They are acce
 2. **Manually**: Place a `.pgn` file in the `pgn/` directory, then click "Re-scan" on the admin page or call `POST /rescan_sets`.
 
 **To share a set**: Give the recipient the URL in the form `http://host:port/#set=<hash>`. The hash is derived from the filename (SHA-256, first 8 hex characters), so it's deterministic and never changes for a given file.
+
+### Auto-Annotation
+
+When a PGN is uploaded via the admin page, the server automatically runs Stockfish analysis in the background and adds NAG annotations (blunder `??`, mistake `?`, inaccuracy `?!`) to games that don't already have them. The annotated PGN is saved back to disk, so users who load the set later get instant puzzle detection without waiting for engine analysis.
+
+- Games with existing annotations are skipped
+- Annotation runs in a background thread so it doesn't block uploads or interactive use
+- The admin page shows annotation progress with a progress bar
+- Use `--annotate-threads` to control CPU usage (default: 1 thread)
 
 ## Tech Stack
 

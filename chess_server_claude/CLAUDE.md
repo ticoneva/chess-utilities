@@ -151,7 +151,8 @@ Manages session state, PGN parsing, and puzzle analysis.
 | `/list_remote_sets` | GET | List all available remote puzzle sets |
 | `/rescan_sets` | POST | Re-scan PGN directory for new files |
 | `/admin` | GET | Render admin upload page |
-| `/admin_upload_set` | POST | Upload PGN to remote sets (password-protected) |
+| `/admin_upload_set` | POST | Upload PGN to remote sets (password-protected, triggers auto-annotation) |
+| `/annotation_status/<hash>` | GET | Get annotation progress for a remote set |
 
 #### Server-Sent Events (SSE)
 
@@ -331,6 +332,27 @@ Two methods:
 - Password-protected PGN upload form
 - Re-scan button for manually placed files
 - Table of existing remote sets with hashes and shareable links
+- Annotation progress bar after upload
+- Status badges in sets table (Annotated / Annotating... / Queued / Error)
+
+## Auto-Annotation
+
+When a PGN is uploaded via the admin page, the server automatically runs Stockfish analysis in the background and adds NAG annotations to games that don't already have them.
+
+### How It Works
+1. After upload, `annotate_pgn_file(filepath, file_hash)` runs in a background daemon thread
+2. For each game in the PGN, checks if NAG annotations already exist (NAG 2/4/6)
+3. Games with existing annotations are skipped
+4. For unannotated games, runs Stockfish per-move (0.5s per position) and adds NAGs:
+   - NAG 4 (`??`) for blunders (>= 3.0 cp eval change)
+   - NAG 2 (`?`) for mistakes (>= 1.0 cp eval change)
+   - NAG 6 (`?!`) for inaccuracies (>= 0.5 cp eval change)
+5. Writes annotated PGN back atomically (temp file + rename)
+6. Progress tracked in `annotation_status` dict, queryable via `/annotation_status/<hash>`
+
+### CLI Options
+- `--annotate-threads N`: Number of Stockfish threads for background annotation (default: 1, separate from `--threads`)
+- Uses its own Stockfish instance so it doesn't interfere with interactive analysis
 
 ## Testing with Playwright
 

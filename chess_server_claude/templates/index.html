@@ -2393,6 +2393,8 @@
             const minClass = getAllowedClassifications().join(',');
             const container = document.getElementById('puzzlesList');
 
+            console.log('loadPuzzles called with skipCache:', skipCache, 'minClass:', minClass);
+
             document.getElementById('puzzleSettings').style.display = 'block';
 
             // Check for cached puzzle analysis (unless skipCache is true)

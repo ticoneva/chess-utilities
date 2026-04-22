@@ -2604,6 +2604,7 @@
                 // Collect puzzles that pass the filter
                 const gamePuzzles = [];
                 puzzles.forEach(function(p) {
+                    console.log('Checking puzzle:', p.classification, 'allowed:', allowedClasses, 'match:', p.classification && allowedClasses.includes(p.classification));
                     // Check classification filter
                     if (!p.classification || !allowedClasses.includes(p.classification)) {
                         return; // Skip puzzles that don't match selected classifications
@@ -2617,6 +2618,7 @@
                         gamePuzzles.push({puzzle: p, isWhiteMove: isWhiteMove});
                     }
                 });
+                console.log('Game', gameIdx, 'has', puzzles.length, 'puzzles,', gamePuzzles.length, 'passed filter');
 
                 // Skip this game if no puzzles pass the filter
                 if (gamePuzzles.length === 0) return;

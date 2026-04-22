@@ -835,6 +835,8 @@
                 if (state.pgn_sets && state.pgn_sets.length > 0) {
                     window.pgnSets = state.pgn_sets;
                     window.activeSetId = state.active_set_id || window.pgnSets[0].id;
+                    // Restore player filter for the active set
+                    restorePlayerFilterFromActiveSet();
                 } else if (state.pgn_string) {
                     // Migrate old single-PGN format to pgnSets
                     var setId = 'set_' + Date.now();

@@ -1539,6 +1539,7 @@
                     }
                     updateSelectAllState();
                     rebuildPuzzleResults();
+                    savePlayerFilterForActiveSet();
                     saveStateToStorage();
                 });
             });
@@ -1568,6 +1569,7 @@
                 }
             });
             rebuildPuzzleResults();
+            savePlayerFilterForActiveSet();
             saveStateToStorage();
         });
 

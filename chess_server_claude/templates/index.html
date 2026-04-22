@@ -2541,7 +2541,7 @@
 
             // Reset puzzle array when rebuilding - this ensures correct indices
             window.allPuzzles = [];
-            console.log('Reset allPuzzles to empty array');
+            console.log('Reset allPuzzles to empty array, length:', window.allPuzzles.length);
 
             let filteredPuzzles = 0;
             let html = '<div class="list-group">';
@@ -2627,6 +2627,7 @@
                     var puzzleIndex = window.allPuzzles.length;
                     window.allPuzzles.push(p);
                     filteredPuzzles++;
+                    console.log('Added puzzle', puzzleIndex, 'to allPuzzles, new length:', window.allPuzzles.length);
 
                     // Hide player name in anonymous mode
                     const playerInfo = anonymousMode ? '' : ` • ${isWhiteMove ? whitePlayer : blackPlayer}`;
@@ -2647,6 +2648,8 @@
             });
 
             html += '</div>';
+
+            console.log('rebuildPuzzleResults finished. filteredPuzzles:', filteredPuzzles, 'allPuzzles.length:', window.allPuzzles.length);
 
             if (filteredPuzzles > 0) {
                 const allowedClasses = getAllowedClassifications();

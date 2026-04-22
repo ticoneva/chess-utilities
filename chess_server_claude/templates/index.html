@@ -588,9 +588,12 @@
             // Clear puzzle state from previous set
             window.allPuzzles = [];
             window.gamesWithPuzzles = {};
-            restorePlayerFilterFromActiveSet();
+            restorePlayerFilterFromActiveSet(window.urlPlayerFilter);
             var puzzleResults = document.getElementById('puzzleResults');
             if (puzzleResults) puzzleResults.innerHTML = '';
+
+            // Clear URL filter after first application (it only applies to the initial set)
+            window.urlPlayerFilter = null;
 
             // Restore the session on the server
             try {
@@ -627,10 +630,14 @@
         }
 
         // Restore player filter from active set
-        function restorePlayerFilterFromActiveSet() {
+        // urlPlayerFilter: optional Set from URL params (overrides stored filter)
+        function restorePlayerFilterFromActiveSet(urlPlayerFilter) {
             if (!window.activeSetId) return;
             var set = window.pgnSets.find(function(s) { return s.id === window.activeSetId; });
-            if (set && set.player_filter) {
+            if (urlPlayerFilter) {
+                // URL filter takes precedence
+                window.selectedPlayers = new Set(urlPlayerFilter);
+            } else if (set && set.player_filter) {
                 window.selectedPlayers = new Set(set.player_filter);
             } else {
                 window.selectedPlayers = new Set();
@@ -702,8 +709,19 @@
                 });
         }
 
-        // Check URL hash for remote set loading
+        // Check URL hash for remote set loading and query params for player filter
         function checkUrlHash() {
+            // Check for player filter in query string
+            var urlParams = new URLSearchParams(window.location.search);
+            var playersParam = urlParams.get('players');
+            if (playersParam) {
+                var players = playersParam.split(',').map(function(p) { return p.trim(); }).filter(function(p) { return p; });
+                if (players.length > 0) {
+                    window.urlPlayerFilter = new Set(players);
+                }
+            }
+
+            // Check for set hash in URL fragment
             var hash = window.location.hash;
             if (hash && hash.startsWith('#set=')) {
                 var setId = hash.substring(5);
@@ -823,8 +841,8 @@
                 if (state.pgn_sets && state.pgn_sets.length > 0) {
                     window.pgnSets = state.pgn_sets;
                     window.activeSetId = state.active_set_id || window.pgnSets[0].id;
-                    // Restore player filter for the active set
-                    restorePlayerFilterFromActiveSet();
+                    // Restore player filter for the active set (URL filter takes precedence)
+                    restorePlayerFilterFromActiveSet(window.urlPlayerFilter);
                 } else if (state.pgn_string) {
                     // Migrate old single-PGN format to pgnSets
                     var setId = 'set_' + Date.now();

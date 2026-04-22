@@ -592,7 +592,7 @@
             // Clear puzzle state from previous set
             window.allPuzzles = [];
             window.gamesWithPuzzles = {};
-            window.selectedPlayers = new Set(); // Clear player filter when switching sets
+            restorePlayerFilterFromActiveSet();
             var puzzleResults = document.getElementById('puzzleResults');
             if (puzzleResults) puzzleResults.innerHTML = '';
 
@@ -614,11 +614,32 @@
             } catch (error) {
                 console.error('Error activating set:', error);
             }
+            savePlayerFilterForActiveSet();
             saveStateToStorage();
 
             // Re-load puzzles if puzzle mode is active
             if (puzzleMode) {
                 loadPuzzles(skipCache);
+            }
+        }
+
+        // Save player filter for active set
+        function savePlayerFilterForActiveSet() {
+            if (!window.activeSetId) return;
+            var set = window.pgnSets.find(function(s) { return s.id === window.activeSetId; });
+            if (set) {
+                set.player_filter = Array.from(window.selectedPlayers);
+            }
+        }
+
+        // Restore player filter from active set
+        function restorePlayerFilterFromActiveSet() {
+            if (!window.activeSetId) return;
+            var set = window.pgnSets.find(function(s) { return s.id === window.activeSetId; });
+            if (set && set.player_filter) {
+                window.selectedPlayers = new Set(set.player_filter);
+            } else {
+                window.selectedPlayers = new Set();
             }
         }
 
@@ -775,7 +796,6 @@
                         anonymous_mode: document.getElementById('anonymousMode').checked,
                         hide_move_list: document.getElementById('hideMoveList').checked,
                         auto_advance_puzzle: document.getElementById('autoAdvancePuzzle').checked,
-                        selected_players: Array.from(selectedPlayers),
                         puzzle_panel_visible: document.getElementById('rightSidebar').style.display !== 'none'
                     },
                     puzzle_settings: {
@@ -900,11 +920,6 @@
                 if (state.settings.auto_advance_puzzle !== undefined) {
                     document.getElementById('autoAdvancePuzzle').checked = state.settings.auto_advance_puzzle;
                     autoAdvancePuzzle = state.settings.auto_advance_puzzle;
-                }
-
-                // Restore selected players
-                if (state.settings.selected_players !== undefined && Array.isArray(state.settings.selected_players)) {
-                    selectedPlayers = new Set(state.settings.selected_players);
                 }
 
                 // Restore puzzle panel visibility

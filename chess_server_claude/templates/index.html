@@ -527,10 +527,8 @@
 
         // Get PGN string of the currently active set (replaces window.savedPgnString)
         function getActivePgn() {
-            console.log('getActivePgn: activeSetId=', window.activeSetId, 'savedPgnString=', window.savedPgnString ? 'exists (' + window.savedPgnString.substring(0, 30) + '...)' : 'null');
             if (!window.activeSetId) return window.savedPgnString || null;
             var set = window.pgnSets.find(function(s) { return s.id === window.activeSetId; });
-            console.log('getActivePgn: set found=', set ? 'yes' : 'no');
             return set ? set.pgn : (window.savedPgnString || null);
         }
 
@@ -587,16 +585,12 @@
             window.savedPgnString = set.pgn;
             renderSetsList();
 
-            console.log('activateSet called for:', set.name, 'skipCache:', skipCache);
-
             // Clear puzzle state from previous set
             window.allPuzzles = [];
             window.gamesWithPuzzles = {};
             restorePlayerFilterFromActiveSet();
             var puzzleResults = document.getElementById('puzzleResults');
             if (puzzleResults) puzzleResults.innerHTML = '';
-
-            console.log('Cleared puzzle state. gamesWithPuzzles:', Object.keys(window.gamesWithPuzzles));
 
             // Restore the session on the server
             try {
@@ -629,7 +623,6 @@
             var set = window.pgnSets.find(function(s) { return s.id === window.activeSetId; });
             if (set) {
                 set.player_filter = Array.from(window.selectedPlayers);
-                console.log('Saved player filter for set', set.name, ':', set.player_filter);
             }
         }
 
@@ -639,10 +632,8 @@
             var set = window.pgnSets.find(function(s) { return s.id === window.activeSetId; });
             if (set && set.player_filter) {
                 window.selectedPlayers = new Set(set.player_filter);
-                console.log('Restored player filter for set', set.name, ':', window.selectedPlayers.size, 'players');
             } else {
                 window.selectedPlayers = new Set();
-                console.log('No player filter found for set', set ? set.name : 'unknown');
             }
         }
 
@@ -731,7 +722,6 @@
                     minClass: minClass
                 };
                 localStorage.setItem(cacheKey, JSON.stringify(cacheData));
-                console.log('Puzzle analysis cached with key:', cacheKey);
             } catch (e) {
                 console.error('Error saving puzzle cache:', e);
             }
@@ -752,12 +742,10 @@
                             return g.puzzles && g.puzzles.some(function(p) { return p.fen; });
                         });
                         if (!hasFen) {
-                            console.log('Puzzle cache missing FEN data, invalidating');
                             localStorage.removeItem(cacheKey);
                             return null;
                         }
                     }
-                    console.log('Puzzle analysis loaded from cache:', cacheKey);
                     return cacheData.gamesWithPuzzles;
                 }
             } catch (e) {
@@ -775,7 +763,6 @@
                         localStorage.removeItem(key);
                     }
                 });
-                console.log('Puzzle caches cleared');
             } catch (e) {
                 console.error('Error clearing puzzle caches:', e);
             }
@@ -816,7 +803,6 @@
                 // Save if we have a PGN or any sets
                 if (state.pgn_string || (window.pgnSets && window.pgnSets.length > 0)) {
                     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-                    console.log('State saved to localStorage');
                 }
             } catch (e) {
                 console.error('Error saving state to localStorage:', e);
@@ -828,7 +814,6 @@
             try {
                 var savedState = localStorage.getItem(STORAGE_KEY);
                 if (!savedState) {
-                    console.log('No saved state found');
                     return false;
                 }
 
@@ -849,7 +834,6 @@
                     window.pgnSets = [{ id: setId, name: setName, pgn: state.pgn_string, numGames: gameCount }];
                     window.activeSetId = setId;
                 } else {
-                    console.log('No PGN or sets in saved state');
                     return false;
                 }
 
@@ -858,11 +842,9 @@
                 // Get active PGN for server restore
                 var activePgn = getActivePgn();
                 if (!activePgn) {
-                    console.log('No active PGN to restore');
                     return false;
                 }
 
-                console.log('Restoring state from localStorage...');
                 isRestoringState = true;
 
                 // Restore the session on the server
@@ -879,7 +861,6 @@
                 }
 
                 var data = await response.json();
-                console.log('Session restored:', data);
 
                 // Store the PGN string for future saves
                 window.savedPgnString = activePgn;
@@ -958,7 +939,6 @@
                 // (loadGamesList triggers puzzle analysis which will use this)
                 if (state.puzzle_settings.puzzle_mode && state.puzzle_settings.current_puzzle_index >= 0) {
                     window.restorePuzzleIndex = state.puzzle_settings.current_puzzle_index;
-                    console.log('Will restore to puzzle index:', window.restorePuzzleIndex);
                 }
 
                 // Load the games list (will start puzzle analysis)
@@ -1004,7 +984,6 @@
                     cleanState.puzzle_settings.random_seed = null;
                     localStorage.setItem(STORAGE_KEY, JSON.stringify(cleanState));
                 }
-                console.log('Game data cleared, settings preserved');
             } catch (e) {
                 console.error('Error clearing game data:', e);
             }
@@ -1037,7 +1016,6 @@
                 puzzleMode = false;
                 // Save the updated state
                 saveStateToStorage();
-                console.log('Settings reset to defaults');
             } catch (e) {
                 console.error('Error resetting settings:', e);
             }
@@ -1779,12 +1757,6 @@
                     signal: currentAnalysisAbortController.signal
                 });
                 const quickData = await quickResponse.json();
-                console.log(`Quick analysis for ply ${positionPly}:`, quickData);
-                if (quickData.wdl) {
-                    console.log(`  WDL data: [${quickData.wdl.map(x => x.toFixed(0)).join(', ')}]‰`);
-                } else {
-                    console.log(`  No WDL data received`);
-                }
                 if (quickResponse.ok && !quickData.disabled) {
                     // Store quick result in cache
                     analysisCache[fen] = {
@@ -1804,10 +1776,7 @@
                     const previousPositionEval = plyEvaluations[positionPly - 1];
                     const previousPositionWDL = plyWDL[positionPly - 1];
                     if (previousPositionEval !== undefined && movePly >= 0) {
-                        console.log(`Classifying move ${movePly}: before=${previousPositionEval.toFixed(2)}, after=${quickData.evaluation.toFixed(2)}`);
                         classifyMove(movePly, previousPositionEval, quickData.evaluation, positionPly, previousPositionWDL, quickData.wdl);
-                    } else {
-                        console.log(`Skipping classification: previousPositionEval=${previousPositionEval}, movePly=${movePly}`);
                     }
                 }
             } catch (error) {
@@ -1848,7 +1817,6 @@
                     const previousPositionEval = plyEvaluations[positionPly - 1];
                     const previousPositionWDL = plyWDL[positionPly - 1];
                     if (previousPositionEval !== undefined && movePly >= 0) {
-                        console.log(`Re-classifying move ${movePly}: before=${previousPositionEval.toFixed(2)}, after=${fullData.evaluation.toFixed(2)}`);
                         classifyMove(movePly, previousPositionEval, fullData.evaluation, positionPly, previousPositionWDL, fullData.wdl);
                     }
                 }
@@ -1863,7 +1831,6 @@
             // Exclude white's first move (ply 0) from blunder analysis
             // Non-standard openings can look like mistakes from Stockfish's perspective
             if (ply === 0) {
-                console.log(`Skipping classification for ply 0 (white's first move)`);
                 return null;
             }
 
@@ -1897,7 +1864,6 @@
                 } else if (evalChange >= INACCURACY_THRESHOLD) {
                     classification = 'inaccuracy';
                 }
-                console.log(`Ply ${ply} (eval mode): evalChange=${evalChange.toFixed(2)}, classification=${classification}`);
             } else if (classificationMode === 'wdl') {
                 // WDL thresholds based on win chance decrease (‰)
                 // - Blunder: decrease ≥ 200‰ (20%)
@@ -1908,8 +1874,6 @@
                 const INACCURACY_WDL_DECREASE = 50;
 
                 if (beforeWDL && afterWDL) {
-                    console.log(`Ply ${ply} WDL (‰) - before: [${beforeWDL.map(x => x.toFixed(0)).join(',')}], after: [${afterWDL.map(x => x.toFixed(0)).join(',')}]`);
-
                     // WDL is always from white's perspective: (white_win, draw, white_loss/black_win)
                     const beforeWhiteWin = beforeWDL[0];
                     const afterWhiteWin = afterWDL[0];
@@ -1923,8 +1887,6 @@
                         wdlChange = afterWhiteWin - beforeWhiteWin;
                     }
 
-                    console.log(`Ply ${ply} (wdl mode): isWhiteMove=${isWhiteMove}, wdlChange=${wdlChange.toFixed(0)}‰, beforeWhiteWin=${beforeWhiteWin.toFixed(0)}‰, afterWhiteWin=${afterWhiteWin.toFixed(0)}‰`);
-
                     if (wdlChange >= BLUNDER_WDL_DECREASE) {
                         classification = 'blunder';
                     } else if (wdlChange >= MISTAKE_WDL_DECREASE) {
@@ -1932,34 +1894,20 @@
                     } else if (wdlChange >= INACCURACY_WDL_DECREASE) {
                         classification = 'inaccuracy';
                     }
-                    console.log(`Ply ${ply} (wdl mode): classification=${classification}`);
-                } else {
-                    console.log(`Ply ${ply}: missing WDL data (beforeWDL=${beforeWDL}, afterWDL=${afterWDL})`);
                 }
             }
 
             // Store classification
             if (classification) {
                 currentMoveClassifications[ply] = classification;
-                console.log(`Stored classification for ply ${ply}: ${classification}`);
 
                 // Directly update the move item in the DOM
                 const moveItem = document.querySelector(`.move-item[data-ply="${ply}"]`);
-                console.log(`Looking for move item with data-ply="${ply}":`, moveItem);
                 if (moveItem) {
-                    const isCurrent = moveItem.classList.contains('current');
-                    console.log(`  Move is current: ${isCurrent}, classes before:`, moveItem.className);
                     // Remove old classification classes
                     moveItem.classList.remove('blunder', 'mistake', 'inaccuracy');
                     // Add new classification
                     moveItem.classList.add(classification);
-                    console.log(`  Added ${classification} class, classes after:`, moveItem.className);
-                } else {
-                    console.log(`  Move item not found in DOM! All move items:`,
-                        Array.from(document.querySelectorAll('.move-item')).map(el => ({
-                            ply: el.dataset.ply,
-                            classes: el.className
-                        })));
                 }
             }
         }
@@ -2181,7 +2129,6 @@
 
         function updateMoveList(moveList, currentPly, moveClassifications) {
             const container = document.getElementById('moveList');
-            console.log('updateMoveList called with currentPly:', currentPly, 'classifications:', moveClassifications);
             let html = '';
 
             for (let i = 0; i < moveList.length; i += 2) {
@@ -2193,9 +2140,6 @@
                     const isCurrent = currentPly > 0 && whiteMove.ply === currentPly - 1;
                     const classification = moveClassifications && moveClassifications[whiteMove.ply];
                     const classStr = `move-item ${isCurrent ? 'current' : ''} ${classification || ''}`;
-                    if (classification) {
-                        console.log(`  White move ply ${whiteMove.ply}: classification=${classification}, isCurrent=${isCurrent}`);
-                    }
                     html += `<span class="${classStr}" data-ply="${whiteMove.ply}">${whiteMove.san}</span> `;
                 }
 
@@ -2204,9 +2148,6 @@
                     const isCurrent = blackMove.ply === currentPly - 1;
                     const classification = moveClassifications && moveClassifications[blackMove.ply];
                     const classStr = `move-item ${isCurrent ? 'current' : ''} ${classification || ''}`;
-                    if (classification) {
-                        console.log(`  Black move ply ${blackMove.ply}: classification=${classification}, isCurrent=${isCurrent}`);
-                    }
                     html += `<span class="${classStr}" data-ply="${blackMove.ply}">${blackMove.san}</span> `;
                 }
 
@@ -2357,7 +2298,7 @@
                 const eventSource = new EventSource(`reanalyze_stream?min_class=${minClass}`);
 
                 eventSource.onmessage = function(e) {
-                    console.log('Reanalyze SSE message:', e.data);
+                    // SSE messages handled by specific event listeners
                 };
 
                 eventSource.addEventListener('analysis_start', function(e) {
@@ -2411,7 +2352,6 @@
             const eventSource = new EventSource(`puzzles_stream?min_class=${minClass}`);
             eventSource.addEventListener('complete', function(e) {
                 eventSource.close();
-                console.log('Background analysis complete');
             });
             eventSource.onerror = function(e) {
                 eventSource.close();
@@ -2422,19 +2362,14 @@
             const minClass = getAllowedClassifications().join(',');
             const container = document.getElementById('puzzlesList');
 
-            console.log('loadPuzzles called with skipCache:', skipCache, 'minClass:', minClass);
-
             document.getElementById('puzzleSettings').style.display = 'block';
 
             // Check for cached puzzle analysis (unless skipCache is true)
-            console.log('Cache check: skipCache=', skipCache, 'activePgn=', activePgn ? 'exists' : 'null');
             if (!skipCache) {
                 var activePgn = getActivePgn();
                 if (activePgn) {
                     const cachedPuzzles = loadPuzzleCache(activePgn, minClass);
-                    console.log('Cache lookup result:', cachedPuzzles ? 'FOUND' : 'NOT FOUND');
                     if (cachedPuzzles) {
-                        console.log('Using cached puzzle analysis');
                         window.gamesWithPuzzles = cachedPuzzles;
                         window.allPuzzles = [];
                         container.innerHTML = '<div id="puzzleStatus" class="text-center py-3" style="display: none;"></div><div id="puzzleResults"></div>';
@@ -2469,7 +2404,7 @@
                 const eventSource = new EventSource(`puzzles_stream?min_class=${minClass}`);
 
                 eventSource.onmessage = function(e) {
-                    console.log('SSE message:', e.data);
+                    // SSE messages handled by specific event listeners
                 };
 
                 eventSource.addEventListener('analysis_start', function(e) {
@@ -2558,13 +2493,11 @@
         }
 
         function rebuildPuzzleResults() {
-            console.log('rebuildPuzzleResults called. gamesWithPuzzles keys:', Object.keys(window.gamesWithPuzzles));
             const resultsDiv = document.getElementById('puzzleResults');
             if (!resultsDiv) return;
 
             // Reset puzzle array when rebuilding - this ensures correct indices
             window.allPuzzles = [];
-            console.log('Reset allPuzzles to empty array, length:', window.allPuzzles.length);
 
             let filteredPuzzles = 0;
             let html = '<div class="list-group">';
@@ -2574,7 +2507,6 @@
 
             // Get allowed classifications
             const allowedClasses = getAllowedClassifications();
-            console.log('Allowed classifications:', allowedClasses);
 
             let sortedGames = Object.keys(window.gamesWithPuzzles).map(Number);
 
@@ -2626,29 +2558,20 @@
 
                 // Collect puzzles that pass the filter
                 const gamePuzzles = [];
-                console.log('Game', gameIdx, 'players:', whitePlayer, 'vs', blackPlayer, 'showWhite:', showWhitePuzzles, 'showBlack:', showBlackPuzzles, 'selectedPlayers:', Array.from(selectedPlayers));
                 puzzles.forEach(function(p) {
-                    console.log('Checking puzzle:', p.classification, 'allowed:', allowedClasses, 'match:', p.classification && allowedClasses.includes(p.classification));
                     // Check classification filter
                     if (!p.classification || !allowedClasses.includes(p.classification)) {
-                        console.log('  -> REJECTED: classification filter');
                         return; // Skip puzzles that don't match selected classifications
                     }
                     // Check if this puzzle should be shown based on who made the move
                     // Even ply = white's move, odd ply = black's move
                     const isWhiteMove = p.ply % 2 === 0;
-                    console.log('  -> ply:', p.ply, 'isWhiteMove:', isWhiteMove);
                     if (isWhiteMove && showWhitePuzzles) {
-                        console.log('  -> ACCEPTED: white move, showWhite=true');
                         gamePuzzles.push({puzzle: p, isWhiteMove: isWhiteMove});
                     } else if (!isWhiteMove && showBlackPuzzles) {
-                        console.log('  -> ACCEPTED: black move, showBlack=true');
                         gamePuzzles.push({puzzle: p, isWhiteMove: isWhiteMove});
-                    } else {
-                        console.log('  -> REJECTED: player filter (isWhiteMove:', isWhiteMove, ', showWhite:', showWhitePuzzles, ', showBlack:', showBlackPuzzles, ')');
                     }
                 });
-                console.log('Game', gameIdx, 'has', puzzles.length, 'puzzles,', gamePuzzles.length, 'passed filter');
 
                 // Skip this game if no puzzles pass the filter
                 if (gamePuzzles.length === 0) return;
@@ -2667,7 +2590,6 @@
                     var puzzleIndex = window.allPuzzles.length;
                     window.allPuzzles.push(p);
                     filteredPuzzles++;
-                    console.log('Added puzzle', puzzleIndex, 'to allPuzzles, new length:', window.allPuzzles.length);
 
                     // Hide player name in anonymous mode
                     const playerInfo = anonymousMode ? '' : ` • ${isWhiteMove ? whitePlayer : blackPlayer}`;
@@ -2688,8 +2610,6 @@
             });
 
             html += '</div>';
-
-            console.log('rebuildPuzzleResults finished. filteredPuzzles:', filteredPuzzles, 'allPuzzles.length:', window.allPuzzles.length);
 
             if (filteredPuzzles > 0) {
                 const allowedClasses = getAllowedClassifications();

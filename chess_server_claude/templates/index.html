@@ -711,11 +711,11 @@
 
         // Check URL hash for remote set loading and query params for player filter
         function checkUrlHash() {
-            // Check for player filter in query string
+            // Check for player filter in query string (use | as delimiter to allow commas in names)
             var urlParams = new URLSearchParams(window.location.search);
             var playersParam = urlParams.get('players');
             if (playersParam) {
-                var players = playersParam.split(',').map(function(p) { return p.trim(); }).filter(function(p) { return p; });
+                var players = playersParam.split('|').map(function(p) { return p.trim(); }).filter(function(p) { return p; });
                 if (players.length > 0) {
                     window.urlPlayerFilter = new Set(players);
                 }

@@ -1041,8 +1041,10 @@
 
         // Attempt to restore state on page load
         document.addEventListener('DOMContentLoaded', async function() {
-            await loadStateFromStorage();
+            // Check URL params FIRST (before loading state) so player filter is available
             checkUrlHash();
+            // Then load state (which will use the URL filter if present)
+            await loadStateFromStorage();
         });
 
         // Flag to prevent auto-navigation during state restoration

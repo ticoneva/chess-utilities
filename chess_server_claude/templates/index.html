@@ -566,7 +566,7 @@
             // Bind click handlers
             setsList.querySelectorAll('.set-name-area').forEach(function(el) {
                 el.addEventListener('click', function() {
-                    activateSet(this.dataset.setId);
+                    activateSet(this.dataset.setId, true);
                 });
             });
             setsList.querySelectorAll('.delete-set-btn').forEach(function(el) {
@@ -578,12 +578,18 @@
         }
 
         // Activate a set: restore it on the server and load its games
-        async function activateSet(setId) {
+        async function activateSet(setId, skipCache) {
             var set = window.pgnSets.find(function(s) { return s.id === setId; });
             if (!set) return;
             window.activeSetId = setId;
             window.savedPgnString = set.pgn;
             renderSetsList();
+
+            // Clear puzzle state from previous set
+            window.allPuzzles = [];
+            window.gamesWithPuzzles = {};
+            var puzzleResults = document.getElementById('puzzleResults');
+            if (puzzleResults) puzzleResults.innerHTML = '';
 
             // Restore the session on the server
             try {
@@ -597,11 +603,16 @@
                     return;
                 }
                 var data = await response.json();
-                loadGamesList(data.num_games || set.numGames);
+                loadGamesList(data.num_games || set.numGames, skipCache);
             } catch (error) {
                 console.error('Error activating set:', error);
             }
             saveStateToStorage();
+
+            // Re-load puzzles if puzzle mode is active
+            if (puzzleMode) {
+                loadPuzzles(skipCache);
+            }
         }
 
         // Delete a set
@@ -628,7 +639,7 @@
                 window.activeSetId = null;
                 window.savedPgnString = null;
                 if (window.pgnSets.length > 0) {
-                    activateSet(window.pgnSets[0].id);
+                    activateSet(window.pgnSets[0].id, true);
                 } else {
                     // No sets left — clear the board
                     document.getElementById('gamesList').innerHTML = '';
@@ -656,10 +667,10 @@
                     var newSet = { id: 'remote_' + hash, name: name, pgn: pgn, numGames: numGames };
                     var existing = window.pgnSets.find(function(s) { return s.id === newSet.id; });
                     if (existing) {
-                        activateSet(existing.id);
+                        activateSet(existing.id, true);
                     } else {
                         window.pgnSets.push(newSet);
-                        activateSet(newSet.id);
+                        activateSet(newSet.id, true);
                     }
                     renderSetsList();
                     saveStateToStorage();
@@ -1421,13 +1432,13 @@
             }
         }
 
-        function loadGamesList(numGames) {
+        function loadGamesList(numGames, skipCache) {
             const gamesList = document.getElementById('gamesList');
             gamesList.innerHTML = '';
             document.getElementById('noGamesMessage').style.display = 'none';
 
             // Load puzzles automatically since puzzles is the default tab
-            loadPuzzles();
+            loadPuzzles(skipCache);
 
             // Fetch all game info in parallel, then add in order
             const fetchPromises = [];
@@ -2379,26 +2390,28 @@
             };
         }
 
-        async function loadPuzzles() {
+        async function loadPuzzles(skipCache) {
             const minClass = getAllowedClassifications().join(',');
             const container = document.getElementById('puzzlesList');
 
             document.getElementById('puzzleSettings').style.display = 'block';
 
-            // Check for cached puzzle analysis
-            var activePgn = getActivePgn();
-            if (activePgn) {
-                const cachedPuzzles = loadPuzzleCache(activePgn, minClass);
-                if (cachedPuzzles) {
-                    console.log('Using cached puzzle analysis');
-                    window.gamesWithPuzzles = cachedPuzzles;
-                    window.allPuzzles = [];
-                    container.innerHTML = '<div id="puzzleStatus" class="text-center py-3" style="display: none;"></div><div id="puzzleResults"></div>';
-                    rebuildPuzzleResults();
-                    finalizePuzzleList(Object.keys(cachedPuzzles).length);
-                    // Run server analysis in background so puzzle_check works
-                    runBackgroundAnalysis(minClass);
-                    return;
+            // Check for cached puzzle analysis (unless skipCache is true)
+            if (!skipCache) {
+                var activePgn = getActivePgn();
+                if (activePgn) {
+                    const cachedPuzzles = loadPuzzleCache(activePgn, minClass);
+                    if (cachedPuzzles) {
+                        console.log('Using cached puzzle analysis');
+                        window.gamesWithPuzzles = cachedPuzzles;
+                        window.allPuzzles = [];
+                        container.innerHTML = '<div id="puzzleStatus" class="text-center py-3" style="display: none;"></div><div id="puzzleResults"></div>';
+                        rebuildPuzzleResults();
+                        finalizePuzzleList(Object.keys(cachedPuzzles).length);
+                        // Run server analysis in background so puzzle_check works
+                        runBackgroundAnalysis(minClass);
+                        return;
+                    }
                 }
             }
 

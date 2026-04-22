@@ -527,8 +527,10 @@
 
         // Get PGN string of the currently active set (replaces window.savedPgnString)
         function getActivePgn() {
+            console.log('getActivePgn: activeSetId=', window.activeSetId, 'savedPgnString=', window.savedPgnString ? 'exists (' + window.savedPgnString.substring(0, 30) + '...)' : 'null');
             if (!window.activeSetId) return window.savedPgnString || null;
             var set = window.pgnSets.find(function(s) { return s.id === window.activeSetId; });
+            console.log('getActivePgn: set found=', set ? 'yes' : 'no');
             return set ? set.pgn : (window.savedPgnString || null);
         }
 

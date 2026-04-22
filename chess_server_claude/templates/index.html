@@ -592,10 +592,11 @@
             // Clear puzzle state from previous set
             window.allPuzzles = [];
             window.gamesWithPuzzles = {};
+            window.selectedPlayers = new Set(); // Clear player filter when switching sets
             var puzzleResults = document.getElementById('puzzleResults');
             if (puzzleResults) puzzleResults.innerHTML = '';
 
-            console.log('Cleared puzzle state. gamesWithPuzzles:', Object.keys(window.gamesWithPuzzles));
+            console.log('Cleared puzzle state. gamesWithPuzzles:', Object.keys(window.gamesWithPuzzles), 'selectedPlayers:', window.selectedPlayers.size);
 
             // Restore the session on the server
             try {

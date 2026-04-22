@@ -629,6 +629,7 @@
             var set = window.pgnSets.find(function(s) { return s.id === window.activeSetId; });
             if (set) {
                 set.player_filter = Array.from(window.selectedPlayers);
+                console.log('Saved player filter for set', set.name, ':', set.player_filter);
             }
         }
 
@@ -638,8 +639,10 @@
             var set = window.pgnSets.find(function(s) { return s.id === window.activeSetId; });
             if (set && set.player_filter) {
                 window.selectedPlayers = new Set(set.player_filter);
+                console.log('Restored player filter for set', set.name, ':', window.selectedPlayers.size, 'players');
             } else {
                 window.selectedPlayers = new Set();
+                console.log('No player filter found for set', set ? set.name : 'unknown');
             }
         }
 

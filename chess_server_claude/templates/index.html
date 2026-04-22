@@ -625,21 +625,37 @@
 
         // Save player filter for active set
         function savePlayerFilterForActiveSet() {
-            if (!window.activeSetId) return;
+            if (!window.activeSetId) {
+                console.log('savePlayerFilterForActiveSet: no activeSetId');
+                return;
+            }
             var set = window.pgnSets.find(function(s) { return s.id === window.activeSetId; });
             if (set) {
                 set.player_filter = Array.from(window.selectedPlayers);
+                console.log('savePlayerFilterForActiveSet: saved', set.player_filter.length, 'players to set', set.name);
+            } else {
+                console.log('savePlayerFilterForActiveSet: set not found for', window.activeSetId);
             }
         }
 
         // Restore player filter from active set
         function restorePlayerFilterFromActiveSet() {
-            if (!window.activeSetId) return;
+            if (!window.activeSetId) {
+                console.log('restorePlayerFilterFromActiveSet: no activeSetId');
+                return;
+            }
             var set = window.pgnSets.find(function(s) { return s.id === window.activeSetId; });
-            if (set && set.player_filter) {
-                window.selectedPlayers = new Set(set.player_filter);
+            if (set) {
+                if (set.player_filter) {
+                    window.selectedPlayers = new Set(set.player_filter);
+                    console.log('restorePlayerFilterFromActiveSet: restored', set.player_filter.length, 'players from set', set.name);
+                } else {
+                    window.selectedPlayers = new Set();
+                    console.log('restorePlayerFilterFromActiveSet: no player_filter in set', set.name);
+                }
             } else {
                 window.selectedPlayers = new Set();
+                console.log('restorePlayerFilterFromActiveSet: set not found for', window.activeSetId);
             }
         }
 

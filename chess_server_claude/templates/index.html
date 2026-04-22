@@ -585,11 +585,15 @@
             window.savedPgnString = set.pgn;
             renderSetsList();
 
+            console.log('activateSet called for:', set.name, 'skipCache:', skipCache);
+
             // Clear puzzle state from previous set
             window.allPuzzles = [];
             window.gamesWithPuzzles = {};
             var puzzleResults = document.getElementById('puzzleResults');
             if (puzzleResults) puzzleResults.innerHTML = '';
+
+            console.log('Cleared puzzle state. gamesWithPuzzles:', Object.keys(window.gamesWithPuzzles));
 
             // Restore the session on the server
             try {
@@ -2398,10 +2402,12 @@
             document.getElementById('puzzleSettings').style.display = 'block';
 
             // Check for cached puzzle analysis (unless skipCache is true)
+            console.log('Cache check: skipCache=', skipCache, 'activePgn=', activePgn ? 'exists' : 'null');
             if (!skipCache) {
                 var activePgn = getActivePgn();
                 if (activePgn) {
                     const cachedPuzzles = loadPuzzleCache(activePgn, minClass);
+                    console.log('Cache lookup result:', cachedPuzzles ? 'FOUND' : 'NOT FOUND');
                     if (cachedPuzzles) {
                         console.log('Using cached puzzle analysis');
                         window.gamesWithPuzzles = cachedPuzzles;
@@ -2527,11 +2533,13 @@
         }
 
         function rebuildPuzzleResults() {
+            console.log('rebuildPuzzleResults called. gamesWithPuzzles keys:', Object.keys(window.gamesWithPuzzles));
             const resultsDiv = document.getElementById('puzzleResults');
             if (!resultsDiv) return;
 
             // Reset puzzle array when rebuilding - this ensures correct indices
             window.allPuzzles = [];
+            console.log('Reset allPuzzles to empty array');
 
             let filteredPuzzles = 0;
             let html = '<div class="list-group">';

@@ -2549,6 +2549,10 @@
             // Get sort order
             const sortOrder = document.getElementById('puzzleSort')?.value || 'asc';
 
+            // Get allowed classifications
+            const allowedClasses = getAllowedClassifications();
+            console.log('Allowed classifications:', allowedClasses);
+
             let sortedGames = Object.keys(window.gamesWithPuzzles).map(Number);
 
             if (sortOrder === 'desc') {
@@ -2600,6 +2604,10 @@
                 // Collect puzzles that pass the filter
                 const gamePuzzles = [];
                 puzzles.forEach(function(p) {
+                    // Check classification filter
+                    if (!p.classification || !allowedClasses.includes(p.classification)) {
+                        return; // Skip puzzles that don't match selected classifications
+                    }
                     // Check if this puzzle should be shown based on who made the move
                     // Even ply = white's move, odd ply = black's move
                     const isWhiteMove = p.ply % 2 === 0;

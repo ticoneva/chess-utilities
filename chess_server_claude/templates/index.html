@@ -865,17 +865,16 @@
 
                 // Restore puzzle settings UI
                 var savedMinClass = state.puzzle_settings.min_class;
+                var allowedClasses = [];
                 if (Array.isArray(savedMinClass)) {
-                    document.getElementById('showBlunder').checked = savedMinClass.includes('blunder');
-                    document.getElementById('showMistake').checked = savedMinClass.includes('mistake');
-                    document.getElementById('showInaccuracy').checked = savedMinClass.includes('inaccuracy');
+                    allowedClasses = savedMinClass;
                 } else if (typeof savedMinClass === 'string') {
-                    // Migrate old single-value format: each class now means only that class
-                    var allowed = [savedMinClass];
-                    document.getElementById('showBlunder').checked = allowed.includes('blunder');
-                    document.getElementById('showMistake').checked = allowed.includes('mistake');
-                    document.getElementById('showInaccuracy').checked = allowed.includes('inaccuracy');
+                    // Parse comma-separated string
+                    allowedClasses = savedMinClass.split(',').filter(function(c) { return c.trim(); });
                 }
+                document.getElementById('showBlunder').checked = allowedClasses.includes('blunder');
+                document.getElementById('showMistake').checked = allowedClasses.includes('mistake');
+                document.getElementById('showInaccuracy').checked = allowedClasses.includes('inaccuracy');
                 document.getElementById('successCriterion').value = state.puzzle_settings.success_criterion;
 
                 // Restore anonymous mode
@@ -1018,8 +1017,8 @@
         }
 
         // Attempt to restore state on page load
-        document.addEventListener('DOMContentLoaded', function() {
-            loadStateFromStorage();
+        document.addEventListener('DOMContentLoaded', async function() {
+            await loadStateFromStorage();
             checkUrlHash();
         });
 

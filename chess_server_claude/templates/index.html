@@ -2603,19 +2603,26 @@
 
                 // Collect puzzles that pass the filter
                 const gamePuzzles = [];
+                console.log('Game', gameIdx, 'players:', whitePlayer, 'vs', blackPlayer, 'showWhite:', showWhitePuzzles, 'showBlack:', showBlackPuzzles, 'selectedPlayers:', Array.from(selectedPlayers));
                 puzzles.forEach(function(p) {
                     console.log('Checking puzzle:', p.classification, 'allowed:', allowedClasses, 'match:', p.classification && allowedClasses.includes(p.classification));
                     // Check classification filter
                     if (!p.classification || !allowedClasses.includes(p.classification)) {
+                        console.log('  -> REJECTED: classification filter');
                         return; // Skip puzzles that don't match selected classifications
                     }
                     // Check if this puzzle should be shown based on who made the move
                     // Even ply = white's move, odd ply = black's move
                     const isWhiteMove = p.ply % 2 === 0;
+                    console.log('  -> ply:', p.ply, 'isWhiteMove:', isWhiteMove);
                     if (isWhiteMove && showWhitePuzzles) {
+                        console.log('  -> ACCEPTED: white move, showWhite=true');
                         gamePuzzles.push({puzzle: p, isWhiteMove: isWhiteMove});
                     } else if (!isWhiteMove && showBlackPuzzles) {
+                        console.log('  -> ACCEPTED: black move, showBlack=true');
                         gamePuzzles.push({puzzle: p, isWhiteMove: isWhiteMove});
+                    } else {
+                        console.log('  -> REJECTED: player filter (isWhiteMove:', isWhiteMove, ', showWhite:', showWhitePuzzles, ', showBlack:', showBlackPuzzles, ')');
                     }
                 });
                 console.log('Game', gameIdx, 'has', puzzles.length, 'puzzles,', gamePuzzles.length, 'passed filter');

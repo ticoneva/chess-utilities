@@ -2441,15 +2441,19 @@
 
                 eventSource.addEventListener('analysis_start', function(e) {
                     const data = JSON.parse(e.data);
-                    document.getElementById('analysisStatus').textContent = `Analyzing ${data.total_games} games...`;
+                    const statusEl = document.getElementById('analysisStatus');
+                    if (statusEl) statusEl.textContent = `Analyzing ${data.total_games} games...`;
                 });
 
                 eventSource.addEventListener('game_start', function(e) {
                     const data = JSON.parse(e.data);
-                    document.getElementById('gameName').textContent = `Game ${data.game_index + 1}: ${data.game_name}`;
-                });                eventSource.addEventListener('move_progress', function(e) {
+                    const gameNameEl = document.getElementById('gameName');
+                    if (gameNameEl) gameNameEl.textContent = `Game ${data.game_index + 1}: ${data.game_name}`;
+                });
+                eventSource.addEventListener('move_progress', function(e) {
                     const data = JSON.parse(e.data);
-                    document.getElementById('gameName').textContent = `Game ${data.game_index + 1}: Move ${data.move_number + 1}/${data.total_moves} - ${data.move_san}`;
+                    const gameNameEl = document.getElementById('gameName');
+                    if (gameNameEl) gameNameEl.textContent = `Game ${data.game_index + 1}: Move ${data.move_number + 1}/${data.total_moves} - ${data.move_san}`;
                 });
 
 

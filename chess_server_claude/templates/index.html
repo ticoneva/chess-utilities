@@ -721,10 +721,22 @@
                 }
             }
 
-            // Check for set hash in URL fragment
+            // Check for set hash in URL fragment (may also have query params in hash)
             var hash = window.location.hash;
             if (hash && hash.startsWith('#set=')) {
                 var setId = hash.substring(5);
+                // Check if there are additional params in the hash (e.g., #set=hash&players=...)
+                if (setId.includes('&')) {
+                    var hashParams = new URLSearchParams(setId.split('&')[1]);
+                    var hashPlayers = hashParams.get('players');
+                    if (hashPlayers) {
+                        var hashPlayerList = hashPlayers.split('|').map(function(p) { return p.trim(); }).filter(function(p) { return p; });
+                        if (hashPlayerList.length > 0) {
+                            window.urlPlayerFilter = new Set(hashPlayerList);
+                        }
+                    }
+                    setId = setId.split('&')[0];
+                }
                 loadRemoteSet(setId);
                 // Clear hash so it doesn't re-trigger on refresh
                 history.replaceState(null, '', window.location.pathname + window.location.search);

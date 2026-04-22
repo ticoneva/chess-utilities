@@ -11,10 +11,12 @@
         .share-link { word-break: break-all; font-family: monospace; font-size: 0.85rem; }
         .annotation-badge { font-size: 0.75rem; }
         .annotation-progress { font-size: 0.8rem; color: #6c757d; }
+        .status-cell { min-width: 120px; }
+        .status-progress-bar { height: 16px; font-size: 0.7rem; }
     </style>
 </head>
 <body>
-    <div class="container py-4" style="max-width: 700px;">
+    <div class="container py-4" style="max-width: 750px;">
         <h4 class="mb-4">Chess Puzzle Generator - Admin</h4>
 
         <!-- Upload form -->
@@ -32,12 +34,6 @@
                     </div>
                     <button type="submit" class="btn btn-primary">Upload</button>
                     <span id="uploadStatus" class="ms-3"></span>
-                    <div id="annotationProgress" class="mt-2" style="display:none;">
-                        <div class="progress mb-1" style="height: 20px;">
-                            <div id="annotationProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
-                        </div>
-                        <small id="annotationProgressText" class="annotation-progress"></small>
-                    </div>
                 </form>
             </div>
         </div>
@@ -72,70 +68,65 @@
     <script>
     var pollingIntervals = {};
 
-    function pollAnnotationStatus(hash, progressBar, progressText, progressContainer) {
+    function clearAllPolling() {
+        for (var hash in pollingIntervals) {
+            clearInterval(pollingIntervals[hash]);
+        }
+        pollingIntervals = {};
+    }
+
+    function renderStatusCell(hash) {
+        return '<div id="status-cell-' + hash + '">' +
+            '<span class="badge bg-light text-dark annotation-badge" id="status-' + hash + '">—</span>' +
+            '</div>';
+    }
+
+    function updateStatusDisplay(hash, data) {
+        var badge = document.getElementById('status-' + hash);
+        var cell = document.getElementById('status-cell-' + hash);
+        if (!badge || !cell) return;
+
+        var status = data.status;
+        if (status === 'complete') {
+            badge.className = 'badge bg-success annotation-badge';
+            badge.textContent = 'Annotated';
+            cell.innerHTML = '<span class="badge bg-success annotation-badge">Annotated</span>';
+            if (pollingIntervals[hash]) { clearInterval(pollingIntervals[hash]); delete pollingIntervals[hash]; }
+        } else if (status === 'annotating') {
+            var pct = data.total > 0 ? Math.round((data.progress / data.total) * 100) : 0;
+            cell.innerHTML =
+                '<div class="progress status-progress-bar mb-1"><div class="progress-bar progress-bar-striped progress-bar-animated" style="width:' + pct + '%">' + pct + '%</div></div>' +
+                '<small class="annotation-progress">' + data.message + '</small>';
+        } else if (status === 'pending') {
+            cell.innerHTML = '<span class="badge bg-info annotation-badge">Queued</span>' +
+                '<small class="annotation-progress ms-1">Waiting to start...</small>';
+        } else if (status === 'error') {
+            cell.innerHTML = '<span class="badge bg-danger annotation-badge">Error</span>' +
+                '<small class="text-danger ms-1">' + data.message + '</small>';
+            if (pollingIntervals[hash]) { clearInterval(pollingIntervals[hash]); delete pollingIntervals[hash]; }
+        } else {
+            cell.innerHTML = '<span class="badge bg-light text-dark annotation-badge">—</span>';
+            if (pollingIntervals[hash]) { clearInterval(pollingIntervals[hash]); delete pollingIntervals[hash]; }
+        }
+    }
+
+    function pollAnnotationStatus(hash) {
         if (pollingIntervals[hash]) clearInterval(pollingIntervals[hash]);
         pollingIntervals[hash] = setInterval(function() {
             fetch('annotation_status/' + hash)
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
-                    if (data.status === 'annotating') {
-                        var pct = data.total > 0 ? Math.round((data.progress / data.total) * 100) : 0;
-                        if (progressBar) {
-                            progressBar.style.width = pct + '%';
-                            progressBar.textContent = pct + '%';
-                        }
-                        if (progressText) progressText.textContent = data.message;
-                    } else if (data.status === 'complete') {
-                        if (progressBar) {
-                            progressBar.style.width = '100%';
-                            progressBar.textContent = '100%';
-                            progressBar.classList.remove('progress-bar-animated');
-                        }
-                        if (progressText) progressText.textContent = 'Annotation complete';
+                    updateStatusDisplay(hash, data);
+                    if (data.status === 'complete' || data.status === 'error' || data.status === 'unknown') {
                         clearInterval(pollingIntervals[hash]);
-                        updateStatusBadge(hash, 'complete');
-                        setTimeout(function() {
-                            if (progressContainer) progressContainer.style.display = 'none';
-                        }, 3000);
-                    } else if (data.status === 'error') {
-                        if (progressText) progressText.textContent = 'Annotation failed: ' + data.message;
-                        if (progressBar) {
-                            progressBar.classList.remove('progress-bar-animated');
-                            progressBar.classList.add('bg-danger');
-                        }
-                        clearInterval(pollingIntervals[hash]);
-                        updateStatusBadge(hash, 'error');
-                    } else if (data.status === 'pending') {
-                        if (progressText) progressText.textContent = 'Queued for annotation...';
-                    } else {
-                        clearInterval(pollingIntervals[hash]);
-                        updateStatusBadge(hash, data.status);
+                        delete pollingIntervals[hash];
                     }
                 })
-                .catch(function() { clearInterval(pollingIntervals[hash]); });
+                .catch(function() {
+                    clearInterval(pollingIntervals[hash]);
+                    delete pollingIntervals[hash];
+                });
         }, 2000);
-    }
-
-    function updateStatusBadge(hash, status) {
-        var badge = document.getElementById('status-' + hash);
-        if (!badge) return;
-        if (status === 'complete') {
-            badge.className = 'badge bg-success annotation-badge';
-            badge.textContent = 'Annotated';
-        } else if (status === 'annotating') {
-            badge.className = 'badge bg-warning annotation-badge';
-            badge.textContent = 'Annotating...';
-        } else if (status === 'pending') {
-            badge.className = 'badge bg-info annotation-badge';
-            badge.textContent = 'Queued';
-        } else if (status === 'error') {
-            badge.className = 'badge bg-danger annotation-badge';
-            badge.textContent = 'Error';
-        } else {
-            // unknown or no status (manually placed files)
-            badge.className = 'badge bg-light text-dark annotation-badge';
-            badge.textContent = '—';
-        }
     }
 
     function fetchAllAnnotationStatuses() {
@@ -146,9 +137,9 @@
                     fetch('annotation_status/' + s.hash)
                         .then(function(r) { return r.json(); })
                         .then(function(data) {
-                            updateStatusBadge(s.hash, data.status);
+                            updateStatusDisplay(s.hash, data);
                             if (data.status === 'annotating' || data.status === 'pending') {
-                                pollAnnotationStatus(s.hash, null, null, null);
+                                pollAnnotationStatus(s.hash);
                             }
                         });
                 });
@@ -169,17 +160,18 @@
                     '</tr></thead><tbody>';
                 sets.forEach(function(s) {
                     var link = window.location.origin + window.location.pathname.replace(/\/admin$/, '') + '/#set=' + s.hash;
-                    var statusBadge = '<span class="badge bg-light text-dark annotation-badge" id="status-' + s.hash + '">—</span>';
                     html += '<tr>' +
                         '<td>' + s.name + '</td>' +
                         '<td><span class="hash-code">' + s.hash + '</span></td>' +
                         '<td>' + s.num_games + '</td>' +
-                        '<td>' + statusBadge + '</td>' +
+                        '<td class="status-cell">' + renderStatusCell(s.hash) + '</td>' +
                         '<td><a href="' + link + '" class="share-link">' + link + '</a></td>' +
                         '</tr>';
                 });
                 html += '</tbody></table>';
                 container.innerHTML = html;
+                // Fetch statuses after table is rendered
+                fetchAllAnnotationStatuses();
             })
             .catch(function() {
                 document.getElementById('setsTable').innerHTML =
@@ -208,16 +200,7 @@
                     status.innerHTML = 'Uploaded! Share link: <a href="' + link + '">' + link + '</a>';
                     status.className = 'ms-3 text-success';
                     document.getElementById('pgnFile').value = '';
-                    // Show annotation progress
-                    var progressContainer = document.getElementById('annotationProgress');
-                    var progressBar = document.getElementById('annotationProgressBar');
-                    var progressText = document.getElementById('annotationProgressText');
-                    progressContainer.style.display = 'block';
-                    progressBar.style.width = '0%';
-                    progressBar.textContent = '';
-                    progressBar.className = 'progress-bar progress-bar-striped progress-bar-animated';
-                    progressText.textContent = 'Starting annotation...';
-                    pollAnnotationStatus(data.hash, progressBar, progressText, progressContainer);
+                    // Reload sets table which will pick up annotation status
                     loadSets();
                 }
             })
@@ -242,7 +225,6 @@
     });
 
     loadSets();
-    fetchAllAnnotationStatuses();
     </script>
 </body>
 </html>

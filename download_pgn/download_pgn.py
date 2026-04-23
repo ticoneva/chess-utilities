@@ -83,7 +83,25 @@ def download_chess_games(
             for game in games:
                 pgn = game.get('pgn')
                 if pgn:
-                    all_pgns.append(pgn)
+                    # Filter by day-level start/end date
+                    include = True
+                    if start_date or end_date:
+                        date_match = None
+                        for line in pgn.split('\n'):
+                            if line.startswith('[Date "'):
+                                date_str = line[7:line.index('"]')]
+                                try:
+                                    date_match = datetime.strptime(date_str, "%Y.%m.%d")
+                                except ValueError:
+                                    pass
+                                break
+                        if date_match is not None:
+                            if start_date and date_match < start_date:
+                                include = False
+                            if end_date and date_match > end_date:
+                                include = False
+                    if include:
+                        all_pgns.append(pgn)
 
         except urllib.error.HTTPError as e:
             if e.code == 404:
